@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MatchmakingService.Tests", "..\MatchmakingService.Tests\MatchmakingService.Tests.csproj", "{CD47D264-CB55-48BE-BCA5-DF849A64602D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MatchmakingService.Tests", "MatchmakingService.Test\MatchmakingService.Tests.csproj", "{D20623D2-CFE0-4499-A8EA-885C0996E58A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CD47D264-CB55-48BE-BCA5-DF849A64602D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CD47D264-CB55-48BE-BCA5-DF849A64602D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CD47D264-CB55-48BE-BCA5-DF849A64602D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CD47D264-CB55-48BE-BCA5-DF849A64602D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D20623D2-CFE0-4499-A8EA-885C0996E58A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D20623D2-CFE0-4499-A8EA-885C0996E58A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D20623D2-CFE0-4499-A8EA-885C0996E58A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D20623D2-CFE0-4499-A8EA-885C0996E58A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

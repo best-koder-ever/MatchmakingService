@@ -3,10 +3,13 @@ bin/
 obj/
 
 # Ignore EF Core migrations if not needed
-Migrations/
+#Migrations/
 
 # Ignore user-specific files
 *.user
 *.suo
 *.swp
 *.log
+
+# Do not ignore the test project
+!MatchmakingService.Tests/
