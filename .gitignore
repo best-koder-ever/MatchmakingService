@@ -1,0 +1,12 @@
+# Ignore build artifacts
+bin/
+obj/
+
+# Ignore EF Core migrations if not needed
+Migrations/
+
+# Ignore user-specific files
+*.user
+*.suo
+*.swp
+*.log
