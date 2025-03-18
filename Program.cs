@@ -1,4 +1,5 @@
 using MatchmakingService.Data;
+using MatchmakingService.Services;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Sinks.Grafana.Loki;
@@ -17,22 +18,44 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 
 // Add services to the container.
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<MatchmakingDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Register the UserServiceClient with the YARP gateway as the base address
+builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>
+{
+    client.BaseAddress = new Uri("http://dejting-yarp:8080"); // YARP gateway address
+});
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Apply migrations on startup (only in development)
 if (app.Environment.IsDevelopment())
 {
+    using (var scope = app.Services.CreateScope())
+    {
+        try
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<MatchmakingDbContext>();
+            dbContext.Database.Migrate();
+            Log.Information("Database migration applied successfully.");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "An error occurred while applying database migrations.");
+            throw; // Re-throw the exception to prevent the app from starting
+        }
+    }
+
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
 
-app.MapControllers(); // Map your controllers
+app.MapControllers();
 
 app.Run();
