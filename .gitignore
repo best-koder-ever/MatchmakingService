@@ -12,4 +12,4 @@ obj/
 *.log
 
 # Do not ignore the test project
-!MatchmakingService.Tests/
+!MatchmakingService.Test/

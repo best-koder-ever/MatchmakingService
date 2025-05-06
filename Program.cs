@@ -21,8 +21,16 @@ builder.Host.UseSerilog();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services.AddScoped<MatchmakingService.Services.MatchmakingService>();
+
+// Configure MatchmakingDbContext to use MySQL
 builder.Services.AddDbContext<MatchmakingDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseMySql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        new MySqlServerVersion(new Version(8, 0, 30)), // Replace with your MySQL version
+        mySqlOptions => mySqlOptions.EnableRetryOnFailure() // Enable retry on failure
+    ));
 
 // Register the UserServiceClient with the YARP gateway as the base address
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>
@@ -32,24 +40,18 @@ builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>
 
 var app = builder.Build();
 
+// Apply migrations on startup
+// this is done to ensure that the database is created before the application starts
+// and that the database schema is up to date with the model
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<MatchmakingDbContext>();
+    dbContext.Database.Migrate();
+}
+
 // Apply migrations on startup (only in development)
 if (app.Environment.IsDevelopment())
 {
-    using (var scope = app.Services.CreateScope())
-    {
-        try
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<MatchmakingDbContext>();
-            dbContext.Database.Migrate();
-            Log.Information("Database migration applied successfully.");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "An error occurred while applying database migrations.");
-            throw; // Re-throw the exception to prevent the app from starting
-        }
-    }
-
     app.UseSwagger();
     app.UseSwaggerUI();
 }
