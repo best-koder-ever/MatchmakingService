@@ -9,5 +9,6 @@ namespace MatchmakingService.Data
 
         public DbSet<UserInteraction> UserInteractions { get; set; }
         public DbSet<Match> Matches { get; set; }
+        public DbSet<Message> Messages { get; set; } // Add this line
     }
 }
