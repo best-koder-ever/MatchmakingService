@@ -26,5 +26,6 @@ WORKDIR /app
 COPY --from=build-env /app/out .
 COPY --from=build-env /app/matchmaking-service/public.key ./public.key
 
-EXPOSE 8080
+EXPOSE 8083
+ENV ASPNETCORE_URLS=http://*:8083
 ENTRYPOINT ["dotnet", "MatchmakingService.dll"]
