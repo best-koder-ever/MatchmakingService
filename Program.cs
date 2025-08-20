@@ -23,6 +23,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddScoped<MatchmakingService.Services.MatchmakingService>();
+builder.Services.AddScoped<IAdvancedMatchingService, AdvancedMatchingService>();
 builder.Services.AddScoped<NotificationService>();
 
 // Configure MatchmakingDbContext to use MySQL
