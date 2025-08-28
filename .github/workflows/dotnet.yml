@@ -1,0 +1,43 @@
+name: 💕 Matchmaking Service CI/CD
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🔧 Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: 📦 Restore dependencies
+      run: dotnet restore MatchmakingService.sln
+
+    - name: 🏗️ Build solution
+      run: dotnet build MatchmakingService.sln --no-restore --configuration Release
+
+    - name: 🧪 Run tests (if any)
+      run: |
+        if find . -name "*.Tests.csproj" | grep -q .; then
+          dotnet test --no-build --configuration Release
+        else
+          echo "No test projects found, skipping tests"
+        fi
+
+    - name: 🏗️ Build Docker image
+      run: |
+        docker build -t matchmaking-service:latest .
+
+    - name: 📤 Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: matchmaking-service-build
+        path: bin/Release/net8.0/
