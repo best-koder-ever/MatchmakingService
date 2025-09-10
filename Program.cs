@@ -9,7 +9,7 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
     .WriteTo.GrafanaLoki("http://loki:3100", labels: new[]
     {
-        new LokiLabel { Key = "app", Value = "matchmaking-service" },
+        new LokiLabel { Key = "app", Value = "MatchmakingService" },
         new LokiLabel { Key = "environment", Value = "development" }
     })
     .CreateLogger();
