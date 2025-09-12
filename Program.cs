@@ -26,13 +26,23 @@ builder.Services.AddScoped<MatchmakingService.Services.MatchmakingService>();
 builder.Services.AddScoped<IAdvancedMatchingService, AdvancedMatchingService>();
 builder.Services.AddScoped<NotificationService>();
 
-// Configure MatchmakingDbContext to use MySQL
-builder.Services.AddDbContext<MatchmakingDbContext>(options =>
-    options.UseMySql(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        new MySqlServerVersion(new Version(8, 0, 30)), // Replace with your MySQL version
-        mySqlOptions => mySqlOptions.EnableRetryOnFailure() // Enable retry on failure
-    ));
+// Configure MatchmakingDbContext conditionally
+if (Environment.GetEnvironmentVariable("DEMO_MODE") == "true")
+{
+    builder.Services.AddDbContext<MatchmakingDbContext>(options =>
+        options.UseInMemoryDatabase("MatchmakingServiceDemo"));
+    Console.WriteLine("MatchmakingService using in-memory database for demo mode");
+}
+else
+{
+    builder.Services.AddDbContext<MatchmakingDbContext>(options =>
+        options.UseMySql(
+            builder.Configuration.GetConnectionString("DefaultConnection"),
+            new MySqlServerVersion(new Version(8, 0, 30)), // Replace with your MySQL version
+            mySqlOptions => mySqlOptions.EnableRetryOnFailure() // Enable retry on failure
+        ));
+    Console.WriteLine("MatchmakingService using MySQL database for production mode");
+}
 
 // Register the UserServiceClient with the YARP gateway as the base address
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>
@@ -48,7 +58,17 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<MatchmakingDbContext>();
-    dbContext.Database.Migrate();
+    
+    // Only migrate if using a relational database (not in-memory)
+    if (dbContext.Database.IsRelational())
+    {
+        dbContext.Database.Migrate();
+        Console.WriteLine("MatchmakingService: Applied database migrations");
+    }
+    else
+    {
+        Console.WriteLine("MatchmakingService: Using in-memory database, skipping migrations");
+    }
 }
 
 // Apply migrations on startup (only in development)
