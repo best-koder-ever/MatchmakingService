@@ -1,5 +1,6 @@
 using MatchmakingService.Data;
 using MatchmakingService.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Sinks.Grafana.Loki;
@@ -81,5 +82,10 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.MapControllers();
+// Add health check endpoint
+app.MapGet("/health", async context =>
+{
+    await context.Response.WriteAsync("Healthy");
+});
 
 app.Run();
