@@ -15,9 +15,6 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build-env /app/out .
 
-# Copy the public key for JWT validation from the correct location
-COPY MatchmakingService/public.key ./public.key
-
 EXPOSE 8083
 ENV ASPNETCORE_URLS=http://*:8083
 ENTRYPOINT ["dotnet", "MatchmakingService.dll"]
