@@ -1,3 +1,4 @@
+using DatingApp.Shared.Middleware;
 using MatchmakingService.Data;
 using MatchmakingService.Extensions;
 using MatchmakingService.Services;
@@ -13,6 +14,12 @@ using Serilog.Sinks.Grafana.Loki;
 using System;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+});
 
 builder.Host.UseSerilog((context, services, loggerConfiguration) =>
 {
@@ -37,6 +44,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<MatchmakingService.Services.MatchmakingService>();
 builder.Services.AddScoped<IAdvancedMatchingService, AdvancedMatchingService>();
 builder.Services.AddScoped<NotificationService>();
+builder.Services.AddCorrelationIds();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
@@ -75,6 +83,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseCorrelationIds();
 app.UseAuthentication();
 app.UseAuthorization();
 
