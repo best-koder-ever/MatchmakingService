@@ -40,4 +40,9 @@
     <Compile Include="..\Shared\Middleware\CorrelationIdMiddleware.cs" Link="Shared/Middleware/CorrelationIdMiddleware.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="MatchmakingService.Tests/**/*.cs" />
+    <Content Remove="MatchmakingService.Tests/**/*" />
+  </ItemGroup>
+
 </Project>
