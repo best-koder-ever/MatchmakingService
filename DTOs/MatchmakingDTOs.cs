@@ -7,6 +7,7 @@ namespace MatchmakingService.DTOs
         public double? MinScore { get; set; } = 60.0;
         public bool ExcludePreviouslySwiped { get; set; } = true;
         public string AlgorithmVersion { get; set; } = "v1.0";
+        public bool? IsPremium { get; set; } = false;
     }
     
     public class MatchSuggestionResponse

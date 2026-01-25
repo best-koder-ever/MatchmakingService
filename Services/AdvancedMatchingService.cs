@@ -20,15 +20,18 @@ namespace MatchmakingService.Services
         private readonly MatchmakingDbContext _context;
         private readonly IUserServiceClient _userServiceClient;
         private readonly ILogger<AdvancedMatchingService> _logger;
+        private readonly IDailySuggestionTracker _suggestionTracker;
 
         public AdvancedMatchingService(
             MatchmakingDbContext context, 
             IUserServiceClient userServiceClient,
-            ILogger<AdvancedMatchingService> logger)
+            ILogger<AdvancedMatchingService> logger,
+            IDailySuggestionTracker suggestionTracker)
         {
             _context = context;
             _userServiceClient = userServiceClient;
             _logger = logger;
+            _suggestionTracker = suggestionTracker;
         }
 
         public async Task<List<MatchSuggestionResponse>> FindMatchesAsync(FindMatchesRequest request)
@@ -39,6 +42,16 @@ namespace MatchmakingService.Services
                 if (userProfile == null)
                 {
                     _logger.LogWarning($"User profile not found for user {request.UserId}");
+                    return new List<MatchSuggestionResponse>();
+                }
+
+                // Check daily suggestion limit
+                var isPremium = request.IsPremium ?? false;
+                var (allowed, remaining) = await _suggestionTracker.CheckAndIncrementAsync(request.UserId, isPremium);
+                
+                if (!allowed)
+                {
+                    _logger.LogInformation($"User {request.UserId} has reached daily suggestion limit");
                     return new List<MatchSuggestionResponse>();
                 }
 

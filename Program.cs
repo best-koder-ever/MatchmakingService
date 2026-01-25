@@ -51,6 +51,11 @@ var scoringConfig = new MatchmakingService.Models.ScoringConfiguration();
 builder.Configuration.GetSection("Scoring").Bind(scoringConfig);
 builder.Services.AddSingleton(scoringConfig);
 
+// Register daily suggestion limits configuration
+builder.Services.Configure<MatchmakingService.Models.DailySuggestionLimits>(
+    builder.Configuration.GetSection("DailySuggestionLimits"));
+builder.Services.AddSingleton<IDailySuggestionTracker, InMemoryDailySuggestionTracker>();
+
 builder.Services.AddCorrelationIds();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
