@@ -239,7 +239,67 @@ namespace MatchmakingService.Controllers
             }
         }
 
+        // POST: Unmatch by match ID with reason tracking (preferred method)
+        [HttpPost("matches/{matchId}/unmatch")]
+        public async Task<IActionResult> UnmatchByMatchId(int matchId, [FromBody] UnmatchRequest request)
+        {
+            try
+            {
+                if (matchId <= 0)
+                {
+                    return BadRequest("Invalid match ID");
+                }
+
+                if (request.UserId <= 0)
+                {
+                    return BadRequest("Invalid user ID");
+                }
+
+                var match = await _context.Matches
+                    .FirstOrDefaultAsync(m => m.Id == matchId && m.IsActive);
+
+                if (match == null)
+                {
+                    return NotFound("Active match not found");
+                }
+
+                // Verify the requesting user is a participant in this match
+                if (match.User1Id != request.UserId && match.User2Id != request.UserId)
+                {
+                    return Forbid(); // User is not part of this match
+                }
+
+                // Soft delete the match with reason tracking
+                match.IsActive = false;
+                match.UnmatchedAt = DateTime.UtcNow;
+                match.UnmatchedByUserId = request.UserId;
+                match.UnmatchReason = request.Reason ?? "not_specified";
+
+                await _context.SaveChangesAsync();
+
+                var otherUserId = match.User1Id == request.UserId ? match.User2Id : match.User1Id;
+
+                _logger.LogInformation(
+                    "Match {MatchId} unmatched by user {UserId} (other user: {OtherUserId}). Reason: {Reason}",
+                    matchId, request.UserId, otherUserId, match.UnmatchReason);
+
+                return Ok(new UnmatchResponse
+                {
+                    Success = true,
+                    Message = "Match ended successfully",
+                    MatchId = matchId,
+                    UnmatchedAt = match.UnmatchedAt.Value
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error unmatching match {MatchId} by user {UserId}", matchId, request.UserId);
+                return StatusCode(500, "Error ending match");
+            }
+        }
+
         // POST: Update user's matching preferences
+
         [HttpPost("preferences")]
         public async Task<IActionResult> UpdatePreferences([FromBody] UpdatePreferencesRequest request)
         {

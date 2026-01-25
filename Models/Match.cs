@@ -13,6 +13,7 @@ namespace MatchmakingService.Models
         public bool IsActive { get; set; } = true; // Whether match is still active
         public DateTime? UnmatchedAt { get; set; } // When one user unmatched
         public int? UnmatchedByUserId { get; set; } // Which user initiated unmatch
+        public string? UnmatchReason { get; set; } // Why user unmatched (for analytics)
         public int? LastMessageByUserId { get; set; } // Track last message sender
         public DateTime? LastMessageAt { get; set; } // Track last activity
         public string? MatchSource { get; set; } // How they were matched (algorithm, manual, etc.)

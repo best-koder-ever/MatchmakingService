@@ -79,4 +79,18 @@ namespace MatchmakingService.DTOs
         public int UserId { get; set; }
         public List<int> SwipedUserIds { get; set; } = new();
     }
-}
+
+    public class UnmatchRequest
+    {
+        public int UserId { get; set; }
+        public string? Reason { get; set; } // Optional reason: "not_interested", "inappropriate", "found_someone", "other"
+        public string? Notes { get; set; } // Optional additional context
+    }
+
+    public class UnmatchResponse
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public int MatchId { get; set; }
+        public DateTime UnmatchedAt { get; set; }
+    }}
