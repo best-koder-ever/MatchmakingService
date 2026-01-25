@@ -93,4 +93,40 @@ namespace MatchmakingService.DTOs
         public string Message { get; set; } = string.Empty;
         public int MatchId { get; set; }
         public DateTime UnmatchedAt { get; set; }
-    }}
+    }
+
+    public class ConsolidatedMatchDto
+    {
+        public int MatchId { get; set; }
+        public int MatchedUserId { get; set; }
+        public DateTime MatchedAt { get; set; }
+        public double CompatibilityScore { get; set; }
+        public string? MatchSource { get; set; }
+        
+        // User profile details
+        public string Name { get; set; } = string.Empty;
+        public int Age { get; set; }
+        public string? Bio { get; set; }
+        public string? PrimaryPhotoUrl { get; set; }
+        public string? City { get; set; }
+        public double? DistanceKm { get; set; }
+        
+        // Last message preview
+        public string? LastMessagePreview { get; set; }
+        public DateTime? LastMessageAt { get; set; }
+        public bool? IsLastMessageFromMe { get; set; }
+        public int? UnreadCount { get; set; }
+        
+        // Status flags
+        public bool IsActive { get; set; }
+        public bool IsOnline { get; set; }
+    }
+
+    public class ConsolidatedMatchListResponse
+    {
+        public List<ConsolidatedMatchDto> Matches { get; set; } = new();
+        public int TotalCount { get; set; }
+        public int ActiveCount { get; set; }
+        public int UnreadMessagesCount { get; set; }
+    }
+}

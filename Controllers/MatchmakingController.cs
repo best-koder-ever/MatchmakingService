@@ -180,6 +180,95 @@ namespace MatchmakingService.Controllers
             }
         }
 
+        // GET: Consolidated match list with user profiles and message previews
+        [HttpGet("matches/{userId}/consolidated")]
+        public async Task<IActionResult> GetConsolidatedMatches(int userId, [FromQuery] bool includeInactive = false)
+        {
+            try
+            {
+                if (userId <= 0)
+                {
+                    return BadRequest("Invalid user ID");
+                }
+
+                var query = _context.Matches
+                    .Where(m => m.User1Id == userId || m.User2Id == userId);
+
+                if (!includeInactive)
+                {
+                    query = query.Where(m => m.IsActive);
+                }
+
+                var matches = await query
+                    .OrderByDescending(m => m.LastMessageAt ?? m.CreatedAt)
+                    .ToListAsync();
+
+                var consolidatedMatches = new List<ConsolidatedMatchDto>();
+                int unreadCount = 0;
+
+                foreach (var match in matches)
+                {
+                    var matchedUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
+                    
+                    // Fetch user profile from UserService
+                    var userProfile = await _userServiceClient.GetUserProfileAsync(matchedUserId);
+                    
+                    if (userProfile == null)
+                    {
+                        _logger.LogWarning("Could not fetch profile for user {UserId}", matchedUserId);
+                        continue; // Skip this match if profile unavailable
+                    }
+
+                    var consolidatedMatch = new ConsolidatedMatchDto
+                    {
+                        MatchId = match.Id,
+                        MatchedUserId = matchedUserId,
+                        MatchedAt = match.CreatedAt,
+                        CompatibilityScore = Math.Round(match.CompatibilityScore, 1),
+                        MatchSource = match.MatchSource,
+                        
+                        // User profile details (from matchmaking-local UserProfile)
+                        Name = $"User {matchedUserId}", // TODO: Fetch from UserService API when available
+                        Age = userProfile.Age,
+                        Bio = null, // TODO: Fetch from UserService API
+                        PrimaryPhotoUrl = $"/api/photos/{matchedUserId}/primary",
+                        City = userProfile.City,
+                        DistanceKm = null, // Could calculate from lat/long if needed
+                        
+                        // Message preview (stub - to be implemented when messaging API available)
+                        LastMessagePreview = null,
+                        LastMessageAt = match.LastMessageAt,
+                        IsLastMessageFromMe = match.LastMessageByUserId == userId,
+                        UnreadCount = null, // TODO: Call messaging service for unread count
+                        
+                        // Status
+                        IsActive = match.IsActive,
+                        IsOnline = false // TODO: Could integrate with presence service
+                    };
+
+                    consolidatedMatches.Add(consolidatedMatch);
+                }
+
+                var response = new ConsolidatedMatchListResponse
+                {
+                    Matches = consolidatedMatches,
+                    TotalCount = consolidatedMatches.Count,
+                    ActiveCount = consolidatedMatches.Count(m => m.IsActive),
+                    UnreadMessagesCount = unreadCount
+                };
+
+                _logger.LogInformation("Retrieved {Count} consolidated matches for user {UserId}", 
+                    consolidatedMatches.Count, userId);
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving consolidated matches for user {UserId}", userId);
+                return StatusCode(500, "Error retrieving matches");
+            }
+        }
+
         // GET: Get match statistics for a user
         [HttpGet("stats/{userId}")]
         public async Task<IActionResult> GetMatchStats(int userId)
