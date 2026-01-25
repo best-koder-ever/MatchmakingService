@@ -76,6 +76,11 @@ builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
 });
 
+builder.Services.AddHttpClient<ISafetyServiceClient, SafetyServiceClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())

@@ -19,17 +19,20 @@ namespace MatchmakingService.Services
     {
         private readonly MatchmakingDbContext _context;
         private readonly IUserServiceClient _userServiceClient;
+        private readonly ISafetyServiceClient _safetyServiceClient;
         private readonly ILogger<AdvancedMatchingService> _logger;
         private readonly IDailySuggestionTracker _suggestionTracker;
 
         public AdvancedMatchingService(
             MatchmakingDbContext context, 
             IUserServiceClient userServiceClient,
+            ISafetyServiceClient safetyServiceClient,
             ILogger<AdvancedMatchingService> logger,
             IDailySuggestionTracker suggestionTracker)
         {
             _context = context;
             _userServiceClient = userServiceClient;
+            _safetyServiceClient = safetyServiceClient;
             _logger = logger;
             _suggestionTracker = suggestionTracker;
         }
@@ -61,6 +64,15 @@ namespace MatchmakingService.Services
                 {
                     swipedUserIds = await GetSwipedUserIdsAsync(request.UserId);
                 }
+
+                // Get blocked users to exclude (critical for safety)
+                var blockedUserIds = await _safetyServiceClient.GetBlockedUserIdsAsync(request.UserId);
+                foreach (var blockedId in blockedUserIds)
+                {
+                    swipedUserIds.Add(blockedId); // Add to exclusion list
+                }
+
+                _logger.LogInformation($"Excluding {blockedUserIds.Count} blocked users from matchmaking for user {request.UserId}");
 
                 // Get potential matches based on basic criteria
                 var potentialMatches = await GetPotentialMatchesQuery(userProfile, swipedUserIds)
