@@ -16,6 +16,7 @@ namespace MatchmakingService.Controllers
         private readonly IUserServiceClient _userServiceClient;
         private readonly MatchmakingService.Services.MatchmakingService _matchmakingService;
         private readonly IAdvancedMatchingService _advancedMatchingService;
+        private readonly INotificationService _notificationService;
         private readonly MatchmakingDbContext _context;
         private readonly ILogger<MatchmakingController> _logger;
 
@@ -23,12 +24,14 @@ namespace MatchmakingService.Controllers
             IUserServiceClient userServiceClient,
             MatchmakingService.Services.MatchmakingService matchmakingService,
             IAdvancedMatchingService advancedMatchingService,
+            INotificationService notificationService,
             MatchmakingDbContext context,
             ILogger<MatchmakingController> logger)
         {
             _userServiceClient = userServiceClient;
             _matchmakingService = matchmakingService;
             _advancedMatchingService = advancedMatchingService;
+            _notificationService = notificationService;
             _context = context;
             _logger = logger;
         }
@@ -56,6 +59,9 @@ namespace MatchmakingService.Controllers
 
                 _context.Matches.Add(match);
                 await _context.SaveChangesAsync();
+
+                // Send match notifications to both users
+                await _notificationService.NotifyMatchAsync(request.User1Id, request.User2Id, match.Id);
 
                 _logger.LogInformation($"Match created between users {request.User1Id} and {request.User2Id} with score {compatibilityScore}");
 
