@@ -6,15 +6,15 @@ namespace MatchmakingService.Services
     public class MatchmakingService
     {
         private readonly MatchmakingDbContext _context;
-        private readonly NotificationService _notificationService;
+        private readonly INotificationService _notificationService;
 
-        public MatchmakingService(MatchmakingDbContext context, NotificationService notificationService)
+        public MatchmakingService(MatchmakingDbContext context, INotificationService notificationService)
         {
             _context = context;
             _notificationService = notificationService;
         }
 
-        public void SaveMatch(int user1Id, int user2Id)
+        public async Task SaveMatchAsync(int user1Id, int user2Id)
         {
             var existingMatch = _context.Matches.FirstOrDefault(m =>
                 (m.User1Id == user1Id && m.User2Id == user2Id) ||
@@ -31,9 +31,8 @@ namespace MatchmakingService.Services
                 _context.Matches.Add(match);
                 _context.SaveChanges();
 
-                // Notify both users
-                _notificationService.NotifyUser(user1Id, "You have a new match!");
-                _notificationService.NotifyUser(user2Id, "You have a new match!");
+                // Notify both users about the match
+                await _notificationService.NotifyMatchAsync(user1Id, user2Id, match.Id);
             }
         }
     }
