@@ -43,7 +43,14 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddScoped<MatchmakingService.Services.MatchmakingService>();
 builder.Services.AddScoped<IAdvancedMatchingService, AdvancedMatchingService>();
-builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddHttpClient();
+
+// Register scoring configuration
+var scoringConfig = new MatchmakingService.Models.ScoringConfiguration();
+builder.Configuration.GetSection("Scoring").Bind(scoringConfig);
+builder.Services.AddSingleton(scoringConfig);
+
 builder.Services.AddCorrelationIds();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");

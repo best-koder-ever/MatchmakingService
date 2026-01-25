@@ -101,9 +101,16 @@ namespace MatchmakingService.Services
                 return cachedScore.OverallScore;
             }
 
-            // Calculate compatibility scores
-            var locationScore = CalculateLocationScore(userProfile, targetProfile);
+            // Calculate critical compatibility factors first - these are dealbreakers
             var ageScore = CalculateAgeScore(userProfile, targetProfile);
+            if (ageScore == 0.0)
+                return 0.0; // Age incompatibility is a dealbreaker
+
+            var locationScore = CalculateLocationScore(userProfile, targetProfile);
+            if (locationScore == 0.0)
+                return 0.0; // Beyond max distance is a dealbreaker
+
+            // Calculate compatibility scores
             var interestsScore = CalculateInterestsScore(userProfile, targetProfile);
             var educationScore = CalculateEducationScore(userProfile, targetProfile);
             var lifestyleScore = CalculateLifestyleScore(userProfile, targetProfile);
@@ -123,7 +130,7 @@ namespace MatchmakingService.Services
                              userProfile.InterestsWeight + userProfile.EducationWeight + 
                              userProfile.LifestyleWeight + 0.5;
             
-            var overallScore = Math.Min(100, (weightedScore / totalWeight) * 100);
+            var overallScore = Math.Min(100, weightedScore / totalWeight);
 
             // Cache the score
             await CacheMatchScore(userId, targetUserId, overallScore, locationScore, ageScore, 
