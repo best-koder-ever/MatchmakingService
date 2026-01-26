@@ -117,15 +117,21 @@ builder.Services.AddDbContext<MatchmakingDbContext>(options =>
         mySqlOptions => mySqlOptions.EnableRetryOnFailure()
     ));
 
+// Internal API Key Authentication for service-to-service calls
+builder.Services.AddScoped<InternalApiKeyAuthFilter>();
+builder.Services.AddTransient<InternalApiKeyAuthHandler>();
+
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
-});
+})
+.AddHttpMessageHandler<InternalApiKeyAuthHandler>();
 
 builder.Services.AddHttpClient<ISafetyServiceClient, SafetyServiceClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
-});
+})
+.AddHttpMessageHandler<InternalApiKeyAuthHandler>();
 
 builder.Services.AddHealthChecks();
 
