@@ -7,6 +7,17 @@ namespace MatchmakingService.Services
     {
         Task<(bool allowed, int remaining)> CheckAndIncrementAsync(int userId, bool isPremium);
         Task ResetIfNeededAsync(int userId);
+        Task<DailySuggestionStatus> GetStatusAsync(int userId, bool isPremium);
+    }
+
+    public class DailySuggestionStatus
+    {
+        public int SuggestionsShownToday { get; set; }
+        public int MaxDailySuggestions { get; set; }
+        public int SuggestionsRemaining { get; set; }
+        public DateTime LastResetDate { get; set;}
+        public DateTime NextResetDate { get; set; }
+        public bool QueueExhausted { get; set; }
     }
 
     public class InMemoryDailySuggestionTracker : IDailySuggestionTracker
@@ -69,6 +80,44 @@ namespace MatchmakingService.Services
                 }
             }
             await Task.CompletedTask;
+        }
+
+        public async Task<DailySuggestionStatus> GetStatusAsync(int userId, bool isPremium)
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                await ResetIfNeededAsync(userId);
+                
+                if (!_state.TryGetValue(userId, out var state))
+                {
+                    state = new UserDailySuggestionState
+                    {
+                        UserId = userId,
+                        LastResetDate = DateTime.UtcNow,
+                        SuggestionsShownToday = 0,
+                        QueueExhausted = false
+                    };
+                }
+
+                var maxAllowed = isPremium ? _limits.PremiumMaxDailySuggestions : _limits.MaxDailySuggestions;
+                var remaining = Math.Max(0, maxAllowed - state.SuggestionsShownToday);
+                var nextReset = state.LastResetDate.AddHours(_limits.RefreshIntervalHours);
+
+                return new DailySuggestionStatus
+                {
+                    SuggestionsShownToday = state.SuggestionsShownToday,
+                    MaxDailySuggestions = maxAllowed,
+                    SuggestionsRemaining = remaining,
+                    LastResetDate = state.LastResetDate,
+                    NextResetDate = nextReset,
+                    QueueExhausted = state.QueueExhausted
+                };
+            }
+            finally
+            {
+                _lock.Release();
+            }
         }
     }
 }

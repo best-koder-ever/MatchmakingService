@@ -2,6 +2,7 @@ using MatchmakingService.Models;
 using MatchmakingService.Services;
 using MatchmakingService.Data;
 using MatchmakingService.DTOs;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using System.Linq;
@@ -17,6 +18,7 @@ namespace MatchmakingService.Controllers
         private readonly MatchmakingService.Services.MatchmakingService _matchmakingService;
         private readonly IAdvancedMatchingService _advancedMatchingService;
         private readonly INotificationService _notificationService;
+        private readonly IDailySuggestionTracker _suggestionTracker;
         private readonly MatchmakingDbContext _context;
         private readonly ILogger<MatchmakingController> _logger;
 
@@ -25,6 +27,7 @@ namespace MatchmakingService.Controllers
             MatchmakingService.Services.MatchmakingService matchmakingService,
             IAdvancedMatchingService advancedMatchingService,
             INotificationService notificationService,
+            IDailySuggestionTracker suggestionTracker,
             MatchmakingDbContext context,
             ILogger<MatchmakingController> logger)
         {
@@ -32,6 +35,7 @@ namespace MatchmakingService.Controllers
             _matchmakingService = matchmakingService;
             _advancedMatchingService = advancedMatchingService;
             _notificationService = notificationService;
+            _suggestionTracker = suggestionTracker;
             _context = context;
             _logger = logger;
         }
@@ -79,6 +83,9 @@ namespace MatchmakingService.Controllers
         }
 
         // GET: Find potential matches for a user using advanced algorithm
+        /// <summary>
+        /// T033: Enhanced endpoint with daily suggestion limit tracking
+        /// </summary>
         [HttpPost("find-matches")]
         public async Task<IActionResult> FindMatches([FromBody] FindMatchesRequest request)
         {
@@ -89,18 +96,107 @@ namespace MatchmakingService.Controllers
                     return BadRequest("Invalid user ID");
                 }
 
+                var isPremium = request.IsPremium ?? false;
+                
+                // Get current status before making request
+                var statusBefore = await _suggestionTracker.GetStatusAsync(request.UserId, isPremium);
+                
+                // Check if user has reached daily limit
+                if (statusBefore.SuggestionsRemaining <= 0)
+                {
+                    _logger.LogInformation("User {UserId} has reached daily suggestion limit ({Count}/{Max})", 
+                        request.UserId, statusBefore.SuggestionsShownToday, statusBefore.MaxDailySuggestions);
+                    
+                    return Ok(new FindMatchesResponse
+                    {
+                        Matches = new List<MatchSuggestionResponse>(),
+                        Count = 0,
+                        RequestId = Guid.NewGuid().ToString(),
+                        SuggestionsRemaining = 0,
+                        DailyLimitReached = true,
+                        NextResetAt = statusBefore.NextResetDate,
+                        QueueExhausted = false,
+                        Message = isPremium 
+                            ? $"You've viewed all {statusBefore.MaxDailySuggestions} daily suggestions. Check back tomorrow!"
+                            : $"You've reached your daily limit of {statusBefore.MaxDailySuggestions} profiles. Upgrade to Premium for {50 - statusBefore.MaxDailySuggestions} more!"
+                    });
+                }
+
                 var matches = await _advancedMatchingService.FindMatchesAsync(request);
                 
-                return Ok(new { 
+                // Get updated status after matches found
+                var statusAfter = await _suggestionTracker.GetStatusAsync(request.UserId, isPremium);
+                
+                // Determine if queue is exhausted (no more candidates available)
+                var queueExhausted = matches.Count == 0 && statusAfter.SuggestionsRemaining > 0;
+                
+                var message = queueExhausted
+                    ? "No more profiles available right now. Try broadening your preferences!"
+                    : matches.Count > 0
+                        ? $"Found {matches.Count} compatible profiles"
+                        : statusAfter.SuggestionsRemaining > 0
+                            ? "No matches found. Try adjusting your filters."
+                            : "Daily limit reached. Check back tomorrow!";
+                
+                _logger.LogInformation("Found {Count} matches for user {UserId}. Remaining suggestions: {Remaining}/{Max}", 
+                    matches.Count, request.UserId, statusAfter.SuggestionsRemaining, statusAfter.MaxDailySuggestions);
+                
+                return Ok(new FindMatchesResponse
+                {
                     Matches = matches,
                     Count = matches.Count,
-                    RequestId = Guid.NewGuid().ToString()
+                    RequestId = Guid.NewGuid().ToString(),
+                    SuggestionsRemaining = statusAfter.SuggestionsRemaining,
+                    DailyLimitReached = statusAfter.SuggestionsRemaining <= 0,
+                    NextResetAt = statusAfter.NextResetDate,
+                    QueueExhausted = queueExhausted,
+                    Message = message
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error finding matches for user {request.UserId}");
                 return StatusCode(500, "Error finding matches");
+            }
+        }
+
+        // GET: Check daily suggestion status without consuming a suggestion
+        /// <summary>
+        /// T033: Get current daily suggestion limit status for a user
+        /// </summary>
+        [HttpGet("daily-suggestions/status/{userId}")]
+        public async Task<IActionResult> GetDailySuggestionStatus(int userId, [FromQuery] bool isPremium = false)
+        {
+            try
+            {
+                if (userId <= 0)
+                {
+                    return BadRequest("Invalid user ID");
+                }
+
+                var status = await _suggestionTracker.GetStatusAsync(userId, isPremium);
+                
+                var response = new DailySuggestionStatusResponse
+                {
+                    SuggestionsShownToday = status.SuggestionsShownToday,
+                    MaxDailySuggestions = status.MaxDailySuggestions,
+                    SuggestionsRemaining = status.SuggestionsRemaining,
+                    LastResetDate = status.LastResetDate,
+                    NextResetDate = status.NextResetDate,
+                    QueueExhausted = status.QueueExhausted,
+                    IsPremium = isPremium,
+                    Tier = isPremium ? "premium" : "free"
+                };
+                
+                _logger.LogInformation("Daily suggestion status for user {UserId}: {Shown}/{Max} shown, {Remaining} remaining", 
+                    userId, status.SuggestionsShownToday, status.MaxDailySuggestions, status.SuggestionsRemaining);
+                
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting daily suggestion status for user {UserId}", userId);
+                return StatusCode(500, "Error retrieving daily suggestion status");
             }
         }
 
@@ -499,6 +595,36 @@ namespace MatchmakingService.Controllers
             {
                 _logger.LogError(ex, $"Error retrieving user profile for user {userId}");
                 return StatusCode(500, "Error retrieving user profile");
+            }
+        }
+
+        /// <summary>
+        /// Delete all matches for a specific user (used during account deletion)
+        /// </summary>
+        [HttpDelete("user/{userProfileId:int}/matches")]
+        [AllowAnonymous]
+        public async Task<IActionResult> DeleteUserMatches(int userProfileId)
+        {
+            try
+            {
+                _logger.LogInformation("Deleting all matches for user {UserProfileId}", userProfileId);
+
+                // Delete matches where user is either user1 or user2
+                var matches = await _context.Matches
+                    .Where(m => m.User1Id == userProfileId || m.User2Id == userProfileId)
+                    .ToListAsync();
+
+                var count = matches.Count;
+                _context.Matches.RemoveRange(matches);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("Deleted {Count} matches for user {UserProfileId}", count, userProfileId);
+                return Ok(count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting matches for user {UserProfileId}", userProfileId);
+                return StatusCode(500, "An error occurred while deleting user matches");
             }
         }
     }
