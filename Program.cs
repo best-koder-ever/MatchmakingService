@@ -13,6 +13,9 @@ using Serilog.Events;
 using Serilog.Sinks.Grafana.Loki;
 using System;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -135,6 +138,45 @@ builder.Services.AddHttpClient<ISafetyServiceClient, SafetyServiceClient>(client
 
 builder.Services.AddHealthChecks();
 
+// Configure OpenTelemetry for metrics and distributed tracing
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource
+        .AddService(serviceName: "matchmaking-service",
+                    serviceVersion: "1.0.0"))
+    .WithMetrics(metrics => metrics
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddRuntimeInstrumentation()
+        .AddMeter("MatchmakingService")
+        .AddPrometheusExporter())
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation(options =>
+        {
+            options.RecordException = true;
+            options.Filter = (httpContext) =>
+            {
+                // Don't trace health checks and metrics endpoints
+                var path = httpContext.Request.Path.ToString();
+                return !path.Contains("/health") && !path.Contains("/metrics");
+            };
+        })
+        .AddHttpClientInstrumentation()
+        .AddEntityFrameworkCoreInstrumentation(options =>
+        {
+            options.SetDbStatementForText = true;
+            options.EnrichWithIDbCommand = (activity, command) =>
+            {
+                activity.SetTag("db.query", command.CommandText);
+            };
+        }));
+
+// Create custom meters for business metrics
+System.Diagnostics.Metrics.Meter customMeter = new("MatchmakingService");
+var matchesCreatedCounter = customMeter.CreateCounter<long>("matches_created_total", description: "Total number of matches created");
+var candidatesEvaluatedCounter = customMeter.CreateCounter<long>("candidates_evaluated_total", description: "Total number of candidates evaluated for matching");
+var matchScoreHistogram = customMeter.CreateHistogram<double>("match_score_value", description: "Distribution of match compatibility scores");
+var matchAlgorithmDuration = customMeter.CreateHistogram<double>("match_algorithm_duration_ms", description: "Duration of match algorithm execution in milliseconds");
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -162,5 +204,8 @@ app.MapHub<MatchmakingService.Hubs.MatchmakingHub>("/hubs/matchmaking");
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+// Map Prometheus metrics endpoint
+app.MapPrometheusScrapingEndpoint("/metrics");
 
 app.Run();
