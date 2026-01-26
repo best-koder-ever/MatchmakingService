@@ -19,7 +19,9 @@ public class AdvancedMatchingServiceTests : IDisposable
 {
     private readonly MatchmakingDbContext _context;
     private readonly Mock<IUserServiceClient> _mockUserServiceClient;
+    private readonly Mock<ISafetyServiceClient> _mockSafetyServiceClient;
     private readonly Mock<ILogger<AdvancedMatchingService>> _mockLogger;
+    private readonly Mock<IDailySuggestionTracker> _mockDailySuggestionTracker;
     private readonly AdvancedMatchingService _service;
 
     public AdvancedMatchingServiceTests()
@@ -30,8 +32,16 @@ public class AdvancedMatchingServiceTests : IDisposable
 
         _context = new MatchmakingDbContext(options);
         _mockUserServiceClient = new Mock<IUserServiceClient>();
+        _mockSafetyServiceClient = new Mock<ISafetyServiceClient>();
         _mockLogger = new Mock<ILogger<AdvancedMatchingService>>();
-        _service = new AdvancedMatchingService(_context, _mockUserServiceClient.Object, _mockLogger.Object);
+        _mockDailySuggestionTracker = new Mock<IDailySuggestionTracker>();
+        _service = new AdvancedMatchingService(
+            _context, 
+            _mockUserServiceClient.Object, 
+            _mockSafetyServiceClient.Object,
+            _mockLogger.Object,
+            _mockDailySuggestionTracker.Object
+        );
     }
 
     public void Dispose()
@@ -289,6 +299,12 @@ public class AdvancedMatchingServiceTests : IDisposable
         await _context.UserProfiles.AddRangeAsync(user, target1, target2, target3);
         await _context.SaveChangesAsync();
 
+        // Setup mocks
+        _mockSafetyServiceClient.Setup(x => x.GetBlockedUserIdsAsync(It.IsAny<int>()))
+            .ReturnsAsync(new List<int>());
+        _mockDailySuggestionTracker.Setup(x => x.CheckAndIncrementAsync(It.IsAny<int>(), It.IsAny<bool>()))
+            .ReturnsAsync((true, 10));
+
         // Act
         var request = new FindMatchesRequest { UserId = 1, Limit = 10, ExcludePreviouslySwiped = false };
         var matches = await _service.FindMatchesAsync(request);
@@ -322,6 +338,12 @@ public class AdvancedMatchingServiceTests : IDisposable
         await _context.UserProfiles.AddRangeAsync(targets);
         await _context.SaveChangesAsync();
 
+        // Setup mocks
+        _mockSafetyServiceClient.Setup(x => x.GetBlockedUserIdsAsync(It.IsAny<int>()))
+            .ReturnsAsync(new List<int>());
+        _mockDailySuggestionTracker.Setup(x => x.CheckAndIncrementAsync(It.IsAny<int>(), It.IsAny<bool>()))
+            .ReturnsAsync((true, 10));
+
         // Act - Request limit of 3
         var request = new FindMatchesRequest { UserId = 1, Limit = 3, ExcludePreviouslySwiped = false };
         var matches = await _service.FindMatchesAsync(request);
@@ -344,6 +366,12 @@ public class AdvancedMatchingServiceTests : IDisposable
 
         await _context.UserProfiles.AddRangeAsync(user, target1, target2);
         await _context.SaveChangesAsync();
+
+        // Setup mocks
+        _mockSafetyServiceClient.Setup(x => x.GetBlockedUserIdsAsync(It.IsAny<int>()))
+            .ReturnsAsync(new List<int>());
+        _mockDailySuggestionTracker.Setup(x => x.CheckAndIncrementAsync(It.IsAny<int>(), It.IsAny<bool>()))
+            .ReturnsAsync((true, 10));
 
         // Act - Request with minScore of 70
         var request = new FindMatchesRequest { UserId = 1, Limit = 10, MinScore = 70, ExcludePreviouslySwiped = false };

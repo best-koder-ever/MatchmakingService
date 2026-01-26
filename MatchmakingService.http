@@ -1,6 +1,7 @@
-@MatchmakingService_HostAddress = http://localhost:8083
+### Health Metrics Endpoint
+GET http://localhost:8083/api/matchmaking/health
+Content-Type: application/json
 
-GET {{MatchmakingService_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
+### Health Metrics (via YARP Gateway)
+GET http://localhost:8080/api/matchmaking/health
+Content-Type: application/json
