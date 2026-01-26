@@ -12,6 +12,7 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.Grafana.Loki;
 using System;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,13 +38,58 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
 builder.Services.AddKeycloakAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 
+builder.Services.AddSignalR();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Matchmaking Service API",
+        Version = "v1",
+        Description = "Candidate scoring, daily suggestions, like/pass processing, and match creation."
+    });
+
+    // JWT Bearer authentication
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme. Enter your token in the text input below.",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            new string[] {}
+        }
+    });
+
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = System.IO.Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (System.IO.File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath);
+    }
+});
+
+builder.Services.AddMemoryCache();
 
 builder.Services.AddScoped<MatchmakingService.Services.MatchmakingService>();
 builder.Services.AddScoped<IAdvancedMatchingService, AdvancedMatchingService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IHealthMetricsService, HealthMetricsService>();
 builder.Services.AddHttpClient();
 
 // Register scoring configuration
@@ -81,6 +127,8 @@ builder.Services.AddHttpClient<ISafetyServiceClient, SafetyServiceClient>(client
     client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
 });
 
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -104,7 +152,9 @@ app.UseCorrelationIds();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapHub<MatchmakingService.Hubs.MatchmakingHub>("/hubs/matchmaking");
+
 app.MapControllers();
-app.MapGet("/health", () => Results.Ok("Healthy"));
+app.MapHealthChecks("/health");
 
 app.Run();

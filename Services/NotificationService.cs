@@ -3,7 +3,9 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
+using MatchmakingService.Hubs;
 
 namespace MatchmakingService.Services
 {
@@ -13,14 +15,23 @@ namespace MatchmakingService.Services
         Task NotifyNewLikeAsync(int userId, int likedByUserId);
     }
 
+    /// <summary>
+    /// T036: Enhanced notification service with real-time SignalR support
+    /// </summary>
     public class NotificationService : INotificationService
     {
+        private readonly IHubContext<MatchmakingHub> _hubContext;
         private readonly HttpClient _httpClient;
         private readonly ILogger<NotificationService> _logger;
         private readonly string _messagingServiceUrl;
 
-        public NotificationService(IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<NotificationService> logger)
+        public NotificationService(
+            IHubContext<MatchmakingHub> hubContext,
+            IHttpClientFactory httpClientFactory, 
+            IConfiguration configuration, 
+            ILogger<NotificationService> logger)
         {
+            _hubContext = hubContext;
             _httpClient = httpClientFactory.CreateClient();
             _logger = logger;
             _messagingServiceUrl = configuration["Services:MessagingService"] ?? "http://messaging-service:8086";
@@ -30,25 +41,51 @@ namespace MatchmakingService.Services
         {
             try
             {
-                var notification = new
+                var timestamp = DateTime.UtcNow;
+                
+                // Build notification payloads for both users
+                var notification1 = new
                 {
                     Type = "Match",
                     MatchId = matchId,
-                    UserId1 = userId1,
-                    UserId2 = userId2,
+                    UserId = userId1,
+                    MatchedWithUserId = userId2,
                     Message = "You have a new match! 🎉",
-                    Timestamp = DateTime.UtcNow
+                    Timestamp = timestamp
                 };
 
-                // Send notification to both users via MessagingService
-                await SendNotificationAsync(userId1, notification);
-                await SendNotificationAsync(userId2, notification);
+                var notification2 = new
+                {
+                    Type = "Match",
+                    MatchId = matchId,
+                    UserId = userId2,
+                    MatchedWithUserId = userId1,
+                    Message = "You have a new match! 🎉",
+                    Timestamp = timestamp
+                };
 
-                _logger.LogInformation("Match notification sent for users {UserId1} and {UserId2}", userId1, userId2);
+                // Send real-time SignalR notifications (primary delivery method)
+                await Task.WhenAll(
+                    _hubContext.Clients.Group($"user_{userId1}").SendAsync("MatchCreated", notification1),
+                    _hubContext.Clients.Group($"user_{userId2}").SendAsync("MatchCreated", notification2)
+                );
+
+                _logger.LogInformation("Real-time match notification sent to users {UserId1} and {UserId2} via SignalR", 
+                    userId1, userId2);
+
+                // Fallback: Send HTTP notification to MessagingService for offline delivery
+                await Task.WhenAll(
+                    SendHttpNotificationAsync(userId1, notification1),
+                    SendHttpNotificationAsync(userId2, notification2)
+                );
+
+                _logger.LogInformation("Match notification completed for users {UserId1} and {UserId2}", 
+                    userId1, userId2);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send match notification for users {UserId1} and {UserId2}", userId1, userId2);
+                _logger.LogError(ex, "Failed to send match notification for users {UserId1} and {UserId2}", 
+                    userId1, userId2);
                 // Don't throw - notifications are best-effort
             }
         }
@@ -60,14 +97,23 @@ namespace MatchmakingService.Services
                 var notification = new
                 {
                     Type = "NewLike",
+                    UserId = userId,
                     LikedByUserId = likedByUserId,
                     Message = "Someone liked you! ❤️",
                     Timestamp = DateTime.UtcNow
                 };
 
-                await SendNotificationAsync(userId, notification);
+                // Real-time SignalR notification
+                await _hubContext.Clients.Group($"user_{userId}").SendAsync("NewLike", notification);
 
-                _logger.LogInformation("Like notification sent to user {UserId} from {LikedByUserId}", userId, likedByUserId);
+                _logger.LogInformation("Real-time like notification sent to user {UserId} from {LikedByUserId} via SignalR", 
+                    userId, likedByUserId);
+
+                // Fallback HTTP notification
+                await SendHttpNotificationAsync(userId, notification);
+
+                _logger.LogInformation("Like notification completed for user {UserId} from {LikedByUserId}", 
+                    userId, likedByUserId);
             }
             catch (Exception ex)
             {
@@ -75,7 +121,7 @@ namespace MatchmakingService.Services
             }
         }
 
-        private async Task SendNotificationAsync(int userId, object notification)
+        private async Task SendHttpNotificationAsync(int userId, object notification)
         {
             try
             {
@@ -90,19 +136,15 @@ namespace MatchmakingService.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("Notification request to MessagingService returned {StatusCode}", response.StatusCode);
+                    _logger.LogWarning("HTTP notification to MessagingService returned {StatusCode} for user {UserId}", 
+                        response.StatusCode, userId);
                 }
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogWarning(ex, "Failed to reach MessagingService for user {UserId}", userId);
+                _logger.LogWarning(ex, "Failed to reach MessagingService for user {UserId} - user may receive notification when they reconnect", 
+                    userId);
             }
-        }
-
-        // Legacy method for backwards compatibility
-        public void NotifyUser(int userId, string message)
-        {
-            _logger.LogInformation("Notifying User {UserId}: {Message}", userId, message);
         }
     }
 }
