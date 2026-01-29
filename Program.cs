@@ -2,6 +2,8 @@ using DatingApp.Shared.Middleware;
 using MatchmakingService.Data;
 using MatchmakingService.Extensions;
 using MatchmakingService.Services;
+using MatchmakingService.Common;
+using MatchmakingService.Common;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -30,8 +32,8 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
     loggerConfiguration
         .ReadFrom.Configuration(context.Configuration)
         .Enrich.FromLogContext()
-        .Enrich.WithEnvironmentName()
-        .Enrich.WithMachineName()
+        
+        
         .Enrich.WithCorrelationId()
         .Enrich.WithProperty("ServiceName", "MatchmakingService")
         .MinimumLevel.Information()
@@ -160,7 +162,6 @@ builder.Services.AddOpenTelemetry()
     .WithMetrics(metrics => metrics
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
-        .AddRuntimeInstrumentation()
         .AddMeter("MatchmakingService")
         .AddPrometheusExporter())
     .WithTracing(tracing => tracing

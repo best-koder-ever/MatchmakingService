@@ -119,6 +119,7 @@ namespace MatchmakingService.Services
 
             // Check if we have a cached score
             var cachedScore = await _context.MatchScores
+                .AsNoTracking()
                 .FirstOrDefaultAsync(ms => ms.UserId == userId && ms.TargetUserId == targetUserId && ms.IsValid);
 
             if (cachedScore != null && (DateTime.UtcNow - cachedScore.CalculatedAt).TotalHours < 24)
@@ -309,6 +310,7 @@ namespace MatchmakingService.Services
         private async Task<UserProfile?> GetUserProfileAsync(int userId)
         {
             return await _context.UserProfiles
+                .AsNoTracking()
                 .FirstOrDefaultAsync(up => up.UserId == userId && up.IsActive);
         }
 
@@ -322,6 +324,7 @@ namespace MatchmakingService.Services
         private IQueryable<UserProfile> GetPotentialMatchesQuery(UserProfile userProfile, HashSet<int> excludeUserIds)
         {
             return _context.UserProfiles
+                .AsNoTracking()
                 .Where(up => up.UserId != userProfile.UserId && up.IsActive)
                 .Where(up => !excludeUserIds.Contains(up.UserId))
                 .Where(up => up.Gender == userProfile.PreferredGender)
@@ -475,17 +478,21 @@ namespace MatchmakingService.Services
         public async Task<MatchStatsResponse> GetMatchStatsAsync(int userId)
         {
             var totalMatches = await _context.Matches
+                .AsNoTracking()
                 .CountAsync(m => (m.User1Id == userId || m.User2Id == userId));
 
             var activeMatches = await _context.Matches
+                .AsNoTracking()
                 .CountAsync(m => (m.User1Id == userId || m.User2Id == userId) && m.IsActive);
 
             var lastMatch = await _context.Matches
+                .AsNoTracking()
                 .Where(m => m.User1Id == userId || m.User2Id == userId)
                 .OrderByDescending(m => m.CreatedAt)
                 .FirstOrDefaultAsync();
 
             var avgScore = await _context.MatchScores
+                .AsNoTracking()
                 .Where(ms => ms.UserId == userId && ms.IsValid)
                 .AverageAsync(ms => (double?)ms.OverallScore) ?? 0.0;
 

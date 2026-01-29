@@ -108,6 +108,7 @@ public class HealthMetricsService : IHealthMetricsService
         {
             // Count interactions (swipes) processed in the last hour
             var count = await _context.UserInteractions
+                .AsNoTracking()
                 .Where(ui => ui.CreatedAt >= since)
                 .CountAsync();
             
@@ -128,6 +129,7 @@ public class HealthMetricsService : IHealthMetricsService
             // Note: In a real scenario, we'd track interaction->match latency
             // For MVP, we'll use a simplified approach
             var recentMatches = await _context.Matches
+                .AsNoTracking()
                 .Where(m => m.IsActive)
                 .OrderByDescending(m => m.CreatedAt)
                 .Take(100)
@@ -156,6 +158,7 @@ public class HealthMetricsService : IHealthMetricsService
             // For MVP, we'll track this simply
             // In production, you'd log failed match calculations to a separate table
             var totalOperations = await _context.UserInteractions
+                .AsNoTracking()
                 .Where(ui => ui.CreatedAt >= since)
                 .CountAsync();
             
@@ -183,6 +186,7 @@ public class HealthMetricsService : IHealthMetricsService
             
             // Count unique users who have interacted today
             var activeUsersToday = await _context.UserInteractions
+                .AsNoTracking()
                 .Where(ui => ui.CreatedAt >= today)
                 .Select(ui => ui.UserId)
                 .Distinct()
@@ -190,6 +194,7 @@ public class HealthMetricsService : IHealthMetricsService
             
             // Count users who have hit their daily limit (100 swipes for free users)
             var usersAtLimit = await _context.UserInteractions
+                .AsNoTracking()
                 .Where(ui => ui.CreatedAt >= today)
                 .GroupBy(ui => ui.UserId)
                 .Where(g => g.Count() >= 100) // Free tier limit

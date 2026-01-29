@@ -19,6 +19,9 @@ namespace MatchmakingService.Data
         {
             base.OnModelCreating(modelBuilder);
 
+            // Apply performance optimizations
+            DbContextOptimizations.ApplyOptimizations(modelBuilder);
+
             // Match entity configuration
             modelBuilder.Entity<Match>()
                 .HasIndex(m => m.User1Id)
