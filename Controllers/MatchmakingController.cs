@@ -227,7 +227,93 @@ namespace MatchmakingService.Controllers
             }
         }
 
-        // GET: Retrieve matches for a user with enhanced details
+        // GET: Retrieve matches for authenticated user (JWT-based, more RESTful)
+        /// <summary>
+        /// T001: New endpoint - Get matches for currently authenticated user
+        /// Uses JWT claims to identify user, no userId parameter needed
+        /// </summary>
+        [HttpGet("matches")]
+        public async Task<IActionResult> GetMyMatches([FromQuery] bool includeInactive = false, [FromQuery] int? page = 1, [FromQuery] int? pageSize = 20)
+        {
+            try
+            {
+                // Extract userId from JWT claims (when auth is enabled)
+                // For now, expect userId in query string or header for backwards compatibility
+                var userIdClaim = User.FindFirst("sub")?.Value ?? User.FindFirst("user_id")?.Value;
+                
+                if (string.IsNullOrEmpty(userIdClaim))
+                {
+                    // Fallback: check query parameter for demo/testing purposes
+                    var userIdParam = Request.Query["userId"].FirstOrDefault();
+                    if (string.IsNullOrEmpty(userIdParam))
+                    {
+                        return BadRequest(new { 
+                            Error = "User ID not found in authentication token",
+                            Message = "Please include userId query parameter or ensure valid JWT token"
+                        });
+                    }
+                    userIdClaim = userIdParam;
+                }
+
+                if (!int.TryParse(userIdClaim, out int userId) || userId <= 0)
+                {
+                    return BadRequest("Invalid user ID in token");
+                }
+
+                // Use AsNoTracking() for read-only query optimization
+                var query = _context.Matches
+                    .AsNoTracking()
+                    .Where(m => m.User1Id == userId || m.User2Id == userId);
+
+                if (!includeInactive)
+                {
+                    query = query.Where(m => m.IsActive);
+                }
+
+                // Get total count before pagination
+                var totalCount = await query.CountAsync();
+
+                // Apply pagination
+                var skip = ((page ?? 1) - 1) * (pageSize ?? 20);
+                var matches = await query
+                    .OrderByDescending(m => m.LastMessageAt ?? m.CreatedAt)
+                    .Skip(skip)
+                    .Take(pageSize ?? 20)
+                    .Select(m => new
+                    {
+                        MatchId = m.Id,
+                        MatchedUserId = m.User1Id == userId ? m.User2Id : m.User1Id,
+                        MatchedAt = m.CreatedAt,
+                        CompatibilityScore = Math.Round(m.CompatibilityScore, 1),
+                        IsActive = m.IsActive,
+                        MatchSource = m.MatchSource,
+                        LastMessageAt = m.LastMessageAt,
+                        LastMessageByUserId = m.LastMessageByUserId,
+                        UnmatchedAt = m.UnmatchedAt,
+                        UnmatchedByUserId = m.UnmatchedByUserId
+                    })
+                    .ToListAsync();
+
+                _logger.LogInformation("Retrieved {Count} matches for authenticated user {UserId} (page {Page}/{PageSize})", 
+                    matches.Count, userId, page, pageSize);
+
+                return Ok(new { 
+                    Matches = matches,
+                    TotalCount = totalCount,
+                    ActiveCount = matches.Count(m => m.IsActive),
+                    Page = page ?? 1,
+                    PageSize = pageSize ?? 20,
+                    TotalPages = (int)Math.Ceiling(totalCount / (double)(pageSize ?? 20))
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving matches for authenticated user");
+                return StatusCode(500, "Error retrieving matches");
+            }
+        }
+
+        // GET: Retrieve matches for a user with enhanced details (admin/specific user lookup)
         [HttpGet("matches/{userId}")]
         public async Task<IActionResult> GetMatchesForUser(int userId, [FromQuery] bool includeInactive = false)
         {
