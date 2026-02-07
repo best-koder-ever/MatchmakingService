@@ -9,6 +9,8 @@ using MatchmakingService.Data;
 using MatchmakingService.Models;
 using MatchmakingService.DTOs;
 using CoreMatchmakingService = MatchmakingService.Services.MatchmakingService;
+// Alias to avoid conflict with Moq.Match
+using ModelMatch = MatchmakingService.Models.Match;
 
 namespace MatchmakingService.Tests.Controllers;
 
@@ -426,7 +428,7 @@ public class MatchmakingControllerTests_Implementation : IDisposable
     public async Task GetMyMatches_WithQueryParameter_ReturnsMatches()
     {
         // Arrange - Create test matches in database
-        var matches = new List<Match>
+        var matches = new List<ModelMatch>
         {
             new() { Id = 1, User1Id = 1, User2Id = 2, CompatibilityScore = 85.5, IsActive = true, CreatedAt = DateTime.UtcNow.AddDays(-2) },
             new() { Id = 2, User1Id = 1, User2Id = 3, CompatibilityScore = 78.0, IsActive = true, CreatedAt = DateTime.UtcNow.AddDays(-1) },
@@ -468,7 +470,7 @@ public class MatchmakingControllerTests_Implementation : IDisposable
     public async Task GetMyMatches_OrdersByLastMessageFirst()
     {
         // Arrange - Create matches with different last message times
-        var matches = new List<Match>
+        var matches = new List<ModelMatch>
         {
             new() { Id = 1, User1Id = 1, User2Id = 2, CompatibilityScore = 85.5, IsActive = true, CreatedAt = DateTime.UtcNow.AddDays(-10) },
             new() { Id = 2, User1Id = 1, User2Id = 3, CompatibilityScore = 78.0, IsActive = true, CreatedAt = DateTime.UtcNow.AddDays(-5), LastMessageAt = DateTime.UtcNow.AddHours(-1) }
@@ -511,7 +513,7 @@ public class MatchmakingControllerTests_Implementation : IDisposable
     public async Task GetMyMatches_ExcludesInactiveByDefault()
     {
         // Arrange
-        var matches = new List<Match>
+        var matches = new List<ModelMatch>
         {
             new() { Id = 1, User1Id = 1, User2Id = 2, CompatibilityScore = 85.5, IsActive = true, CreatedAt = DateTime.UtcNow },
             new() { Id = 2, User1Id = 1, User2Id = 3, CompatibilityScore = 78.0, IsActive = false, CreatedAt = DateTime.UtcNow, UnmatchedAt = DateTime.UtcNow }
@@ -548,7 +550,7 @@ public class MatchmakingControllerTests_Implementation : IDisposable
     public async Task GetMyMatches_WithPagination_ReturnsCorrectPage()
     {
         // Arrange - Create 25 matches
-        var matches = Enumerable.Range(1, 25).Select(i => new Match
+        var matches = Enumerable.Range(1, 25).Select(i => new ModelMatch
         {
             Id = i,
             User1Id = 1,
