@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Net.Http;
 using MatchmakingService.Models;
 using MatchmakingService.Services;
 using MatchmakingService.Data;
@@ -21,6 +23,8 @@ namespace MatchmakingService.Controllers
         private readonly IDailySuggestionTracker _suggestionTracker;
         private readonly MatchmakingDbContext _context;
         private readonly ILogger<MatchmakingController> _logger;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IConfiguration _configuration;
 
         public MatchmakingController(
             IUserServiceClient userServiceClient,
@@ -29,7 +33,9 @@ namespace MatchmakingService.Controllers
             INotificationService notificationService,
             IDailySuggestionTracker suggestionTracker,
             MatchmakingDbContext context,
-            ILogger<MatchmakingController> logger)
+            ILogger<MatchmakingController> logger,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration)
         {
             _userServiceClient = userServiceClient;
             _matchmakingService = matchmakingService;
@@ -38,6 +44,8 @@ namespace MatchmakingService.Controllers
             _suggestionTracker = suggestionTracker;
             _context = context;
             _logger = logger;
+            _httpClientFactory = httpClientFactory;
+            _configuration = configuration;
         }
 
         // POST: Handle mutual match notifications from SwipeService
@@ -313,21 +321,58 @@ namespace MatchmakingService.Controllers
             }
         }
 
-        // GET: Retrieve matches for a user with enhanced details (admin/specific user lookup)
+        // GET: Retrieve matches for a user — accepts UUID string or integer ID
         [HttpGet("matches/{userId}")]
-        public async Task<IActionResult> GetMatchesForUser(int userId, [FromQuery] bool includeInactive = false)
+        public async Task<IActionResult> GetMatchesForUser(string userId, [FromQuery] bool includeInactive = false)
         {
             try
             {
-                if (userId <= 0)
+                int profileId;
+
+                if (int.TryParse(userId, out profileId))
+                {
+                    // Already an integer — use directly
+                }
+                else
+                {
+                    // UUID string from Flutter — resolve to integer profile ID via UserService
+                    var userServiceUrl = _configuration["Services:UserService:BaseUrl"]
+                        ?? "http://localhost:8082";
+                    var client = _httpClientFactory.CreateClient();
+                    var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+                    if (!string.IsNullOrEmpty(authHeader))
+                        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", authHeader);
+
+                    var meResponse = await client.GetAsync($"{userServiceUrl}/api/profiles/me");
+                    if (!meResponse.IsSuccessStatusCode)
+                    {
+                        _logger.LogWarning("Failed to resolve UUID {UserId} to profile ID", userId);
+                        return Ok(new List<object>());
+                    }
+
+                    var meContent = await meResponse.Content.ReadAsStringAsync();
+                    using var meDoc = JsonDocument.Parse(meContent);
+                    if (meDoc.RootElement.TryGetProperty("data", out var meData) &&
+                        meData.TryGetProperty("id", out var meId))
+                    {
+                        profileId = meId.GetInt32();
+                        _logger.LogInformation("Resolved UUID {UserId} to profile ID {ProfileId}", userId, profileId);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Could not extract profile ID from /api/profiles/me for {UserId}", userId);
+                        return Ok(new List<object>());
+                    }
+                }
+
+                if (profileId <= 0)
                 {
                     return BadRequest("Invalid user ID");
                 }
 
-                // Use AsNoTracking() for read-only query optimization
                 var query = _context.Matches
                     .AsNoTracking()
-                    .Where(m => m.User1Id == userId || m.User2Id == userId);
+                    .Where(m => m.User1Id == profileId || m.User2Id == profileId);
 
                 if (!includeInactive)
                 {
@@ -338,28 +383,26 @@ namespace MatchmakingService.Controllers
                     .OrderByDescending(m => m.CreatedAt)
                     .Select(m => new
                     {
-                        MatchId = m.Id,
-                        MatchedUserId = m.User1Id == userId ? m.User2Id : m.User1Id,
-                        MatchedAt = m.CreatedAt,
-                        CompatibilityScore = m.CompatibilityScore,
-                        IsActive = m.IsActive,
-                        MatchSource = m.MatchSource,
-                        LastMessageAt = m.LastMessageAt,
-                        LastMessageByUserId = m.LastMessageByUserId,
-                        UnmatchedAt = m.UnmatchedAt,
-                        UnmatchedByUserId = m.UnmatchedByUserId
+                        matchId = m.Id,
+                        matchedUserId = m.User1Id == profileId ? m.User2Id : m.User1Id,
+                        matchedAt = m.CreatedAt,
+                        compatibilityScore = m.CompatibilityScore,
+                        isActive = m.IsActive,
+                        matchSource = m.MatchSource,
+                        lastMessageAt = m.LastMessageAt,
+                        lastMessageByUserId = m.LastMessageByUserId
                     })
                     .ToListAsync();
 
-                return Ok(new { 
-                    Matches = matches,
-                    TotalCount = matches.Count,
-                    ActiveCount = matches.Count(m => m.IsActive)
-                });
+                _logger.LogInformation("Returning {Count} matches for user {UserId} (profile {ProfileId})",
+                    matches.Count, userId, profileId);
+
+                // Return as flat JSON array (Flutter expects List<dynamic>)
+                return Ok(matches);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error retrieving matches for user {userId}");
+                _logger.LogError(ex, "Error retrieving matches for user {UserId}", userId);
                 return StatusCode(500, "Error retrieving matches");
             }
         }
