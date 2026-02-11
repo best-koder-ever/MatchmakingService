@@ -23,12 +23,12 @@ namespace MatchmakingService.DTOs
         public List<MatchSuggestionResponse> Matches { get; set; } = new();
         public int Count { get; set; }
         public string RequestId { get; set; } = string.Empty;
-        
+
         // Daily limit tracking
         public int SuggestionsRemaining { get; set; }
         public bool DailyLimitReached { get; set; }
         public DateTime? NextResetAt { get; set; }
-        
+
         // Queue status
         public bool QueueExhausted { get; set; }
         public string? Message { get; set; }

@@ -14,13 +14,13 @@ namespace MatchmakingService.Models
         public string City { get; set; } = string.Empty;
         public string State { get; set; } = string.Empty;
         public string Country { get; set; } = string.Empty;
-        
+
         // Preferences
         public string PreferredGender { get; set; } = string.Empty;
         public int MinAge { get; set; }
         public int MaxAge { get; set; }
         public double MaxDistance { get; set; } = 50; // km
-        
+
         // Additional profile data
         public string Interests { get; set; } = string.Empty; // JSON array of interests
         public string Education { get; set; } = string.Empty;
@@ -32,14 +32,14 @@ namespace MatchmakingService.Models
         public bool HasChildren { get; set; }
         public string SmokingStatus { get; set; } = string.Empty; // Never, Sometimes, Often
         public string DrinkingStatus { get; set; } = string.Empty; // Never, Sometimes, Often
-        
+
         // Algorithm weights
         public double LocationWeight { get; set; } = 1.0;
         public double AgeWeight { get; set; } = 1.0;
         public double InterestsWeight { get; set; } = 1.0;
         public double EducationWeight { get; set; } = 0.5;
         public double LifestyleWeight { get; set; } = 0.7;
-        
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         public bool IsActive { get; set; } = true;

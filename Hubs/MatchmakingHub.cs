@@ -19,37 +19,37 @@ public class MatchmakingHub : Hub
     public override async Task OnConnectedAsync()
     {
         var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        
+
         if (string.IsNullOrEmpty(userId))
         {
             _logger.LogWarning("Connection attempt without userId claim");
             Context.Abort();
             return;
         }
-        
+
         // Add connection to user-specific group for targeted notifications
         await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
-        _logger.LogInformation("User {UserId} connected to MatchmakingHub with connection {ConnectionId}", 
+        _logger.LogInformation("User {UserId} connected to MatchmakingHub with connection {ConnectionId}",
             userId, Context.ConnectionId);
-        
+
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        
+
         if (!string.IsNullOrEmpty(userId))
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"user_{userId}");
             _logger.LogInformation("User {UserId} disconnected from MatchmakingHub", userId);
         }
-        
+
         if (exception != null)
         {
             _logger.LogError(exception, "User {UserId} disconnected with error", userId);
         }
-        
+
         await base.OnDisconnectedAsync(exception);
     }
 
@@ -59,7 +59,7 @@ public class MatchmakingHub : Hub
     public async Task Subscribe()
     {
         var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        
+
         if (string.IsNullOrEmpty(userId))
         {
             await Clients.Caller.SendAsync("Error", "Authentication required");

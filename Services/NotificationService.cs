@@ -27,8 +27,8 @@ namespace MatchmakingService.Services
 
         public NotificationService(
             IHubContext<MatchmakingHub> hubContext,
-            IHttpClientFactory httpClientFactory, 
-            IConfiguration configuration, 
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration,
             ILogger<NotificationService> logger)
         {
             _hubContext = hubContext;
@@ -42,7 +42,7 @@ namespace MatchmakingService.Services
             try
             {
                 var timestamp = DateTime.UtcNow;
-                
+
                 // Build notification payloads for both users
                 var notification1 = new
                 {
@@ -70,7 +70,7 @@ namespace MatchmakingService.Services
                     _hubContext.Clients.Group($"user_{userId2}").SendAsync("MatchCreated", notification2)
                 );
 
-                _logger.LogInformation("Real-time match notification sent to users {UserId1} and {UserId2} via SignalR", 
+                _logger.LogInformation("Real-time match notification sent to users {UserId1} and {UserId2} via SignalR",
                     userId1, userId2);
 
                 // Fallback: Send HTTP notification to MessagingService for offline delivery
@@ -79,12 +79,12 @@ namespace MatchmakingService.Services
                     SendHttpNotificationAsync(userId2, notification2)
                 );
 
-                _logger.LogInformation("Match notification completed for users {UserId1} and {UserId2}", 
+                _logger.LogInformation("Match notification completed for users {UserId1} and {UserId2}",
                     userId1, userId2);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send match notification for users {UserId1} and {UserId2}", 
+                _logger.LogError(ex, "Failed to send match notification for users {UserId1} and {UserId2}",
                     userId1, userId2);
                 // Don't throw - notifications are best-effort
             }
@@ -106,13 +106,13 @@ namespace MatchmakingService.Services
                 // Real-time SignalR notification
                 await _hubContext.Clients.Group($"user_{userId}").SendAsync("NewLike", notification);
 
-                _logger.LogInformation("Real-time like notification sent to user {UserId} from {LikedByUserId} via SignalR", 
+                _logger.LogInformation("Real-time like notification sent to user {UserId} from {LikedByUserId} via SignalR",
                     userId, likedByUserId);
 
                 // Fallback HTTP notification
                 await SendHttpNotificationAsync(userId, notification);
 
-                _logger.LogInformation("Like notification completed for user {UserId} from {LikedByUserId}", 
+                _logger.LogInformation("Like notification completed for user {UserId} from {LikedByUserId}",
                     userId, likedByUserId);
             }
             catch (Exception ex)
@@ -136,13 +136,13 @@ namespace MatchmakingService.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("HTTP notification to MessagingService returned {StatusCode} for user {UserId}", 
+                    _logger.LogWarning("HTTP notification to MessagingService returned {StatusCode} for user {UserId}",
                         response.StatusCode, userId);
                 }
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogWarning(ex, "Failed to reach MessagingService for user {UserId} - user may receive notification when they reconnect", 
+                _logger.LogWarning(ex, "Failed to reach MessagingService for user {UserId} - user may receive notification when they reconnect",
                     userId);
             }
         }

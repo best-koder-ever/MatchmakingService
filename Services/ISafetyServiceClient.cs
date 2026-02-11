@@ -25,7 +25,7 @@ namespace MatchmakingService.Services
             {
                 // Safety service uses authenticated requests, gets current user from JWT token
                 var response = await _httpClient.GetAsync("/api/safety/blocked");
-                
+
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning($"Failed to fetch blocked users for user {userId}: {response.StatusCode}");
@@ -33,7 +33,7 @@ namespace MatchmakingService.Services
                 }
 
                 var result = await response.Content.ReadFromJsonAsync<SafetyApiResponse<List<BlockedUserDto>>>();
-                
+
                 if (result?.Success == true && result.Data != null)
                 {
                     // Convert string UserIds to int (assuming they are numeric strings)
@@ -47,7 +47,7 @@ namespace MatchmakingService.Services
                     }
                     return blockedIds;
                 }
-                
+
                 return new List<int>();
             }
             catch (Exception ex)
@@ -62,7 +62,7 @@ namespace MatchmakingService.Services
             try
             {
                 var response = await _httpClient.GetAsync($"/api/safety/is-blocked/{targetUserId}");
-                
+
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning($"Failed to check block status between {userId} and {targetUserId}");

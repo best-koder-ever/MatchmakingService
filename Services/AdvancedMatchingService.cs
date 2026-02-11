@@ -24,7 +24,7 @@ namespace MatchmakingService.Services
         private readonly IDailySuggestionTracker _suggestionTracker;
 
         public AdvancedMatchingService(
-            MatchmakingDbContext context, 
+            MatchmakingDbContext context,
             IUserServiceClient userServiceClient,
             ISafetyServiceClient safetyServiceClient,
             ILogger<AdvancedMatchingService> logger,
@@ -51,7 +51,7 @@ namespace MatchmakingService.Services
                 // Check daily suggestion limit
                 var isPremium = request.IsPremium ?? false;
                 var (allowed, remaining) = await _suggestionTracker.CheckAndIncrementAsync(request.UserId, isPremium);
-                
+
                 if (!allowed)
                 {
                     _logger.LogInformation($"User {request.UserId} has reached daily suggestion limit");
@@ -86,7 +86,7 @@ namespace MatchmakingService.Services
                     if (suggestions.Count >= request.Limit) break;
 
                     var compatibilityScore = await CalculateCompatibilityScoreAsync(request.UserId, targetProfile.UserId);
-                    
+
                     if (compatibilityScore >= (request.MinScore ?? 0))
                     {
                         var suggestion = await CreateMatchSuggestion(userProfile, targetProfile, compatibilityScore);
@@ -143,7 +143,7 @@ namespace MatchmakingService.Services
             var activityScore = await CalculateActivityScore(userId, targetUserId);
 
             // Apply user's preference weights
-            var weightedScore = 
+            var weightedScore =
                 (locationScore * userProfile.LocationWeight) +
                 (ageScore * userProfile.AgeWeight) +
                 (interestsScore * userProfile.InterestsWeight) +
@@ -152,14 +152,14 @@ namespace MatchmakingService.Services
                 (activityScore * 0.5); // Activity score has fixed weight
 
             // Normalize to 0-100 scale
-            var totalWeight = userProfile.LocationWeight + userProfile.AgeWeight + 
-                             userProfile.InterestsWeight + userProfile.EducationWeight + 
+            var totalWeight = userProfile.LocationWeight + userProfile.AgeWeight +
+                             userProfile.InterestsWeight + userProfile.EducationWeight +
                              userProfile.LifestyleWeight + 0.5;
-            
+
             var overallScore = Math.Min(100, weightedScore / totalWeight);
 
             // Cache the score
-            await CacheMatchScore(userId, targetUserId, overallScore, locationScore, ageScore, 
+            await CacheMatchScore(userId, targetUserId, overallScore, locationScore, ageScore,
                                  interestsScore, educationScore, lifestyleScore, activityScore);
 
             return overallScore;
@@ -168,7 +168,7 @@ namespace MatchmakingService.Services
         private double CalculateLocationScore(UserProfile user, UserProfile target)
         {
             var distance = CalculateDistance(user.Latitude, user.Longitude, target.Latitude, target.Longitude);
-            
+
             if (distance > user.MaxDistance)
                 return 0.0;
 
@@ -336,7 +336,7 @@ namespace MatchmakingService.Services
         private async Task<MatchSuggestionResponse> CreateMatchSuggestion(
             UserProfile userProfile, UserProfile targetProfile, double compatibilityScore)
         {
-            var distance = CalculateDistance(userProfile.Latitude, userProfile.Longitude, 
+            var distance = CalculateDistance(userProfile.Latitude, userProfile.Longitude,
                                            targetProfile.Latitude, targetProfile.Longitude);
 
             var interests = new List<string>();
@@ -386,7 +386,7 @@ namespace MatchmakingService.Services
                 var userInterests = JsonSerializer.Deserialize<List<string>>(user.Interests ?? "[]") ?? new List<string>();
                 var targetInterests = JsonSerializer.Deserialize<List<string>>(target.Interests ?? "[]") ?? new List<string>();
                 var commonInterests = userInterests.Intersect(targetInterests, StringComparer.OrdinalIgnoreCase).Count();
-                
+
                 if (commonInterests > 0)
                     reasons.Add($"{commonInterests} shared interest{(commonInterests > 1 ? "s" : "")}");
             }
@@ -401,7 +401,7 @@ namespace MatchmakingService.Services
         }
 
         private async Task CacheMatchScore(int userId, int targetUserId, double overallScore,
-            double locationScore, double ageScore, double interestsScore, 
+            double locationScore, double ageScore, double interestsScore,
             double educationScore, double lifestyleScore, double activityScore)
         {
             var matchScore = new MatchScore
@@ -464,9 +464,9 @@ namespace MatchmakingService.Services
         {
             // Invalidate cached scores for swiped users
             var cachedScores = _context.MatchScores
-                .Where(ms => ms.UserId == request.UserId && 
+                .Where(ms => ms.UserId == request.UserId &&
                             request.SwipedUserIds.Contains(ms.TargetUserId));
-            
+
             foreach (var score in cachedScores)
             {
                 score.IsValid = false;

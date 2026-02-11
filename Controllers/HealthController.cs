@@ -13,7 +13,7 @@ public class HealthController : ControllerBase
 {
     private readonly IHealthMetricsService _healthService;
     private readonly ILogger<HealthController> _logger;
-    
+
     public HealthController(
         IHealthMetricsService healthService,
         ILogger<HealthController> logger)
@@ -21,7 +21,7 @@ public class HealthController : ControllerBase
         _healthService = healthService;
         _logger = logger;
     }
-    
+
     /// <summary>
     /// Get matchmaking service health metrics
     /// </summary>
@@ -32,9 +32,9 @@ public class HealthController : ControllerBase
     public async Task<ActionResult<HealthMetricsResponse>> GetHealth()
     {
         _logger.LogInformation("Health endpoint called");
-        
+
         var metrics = await _healthService.GetHealthMetricsAsync();
-        
+
         return Ok(metrics);
     }
 }

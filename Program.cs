@@ -32,8 +32,8 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
     loggerConfiguration
         .ReadFrom.Configuration(context.Configuration)
         .Enrich.FromLogContext()
-        
-        
+
+
         .Enrich.WithCorrelationId()
         .Enrich.WithProperty("ServiceName", "MatchmakingService")
         .MinimumLevel.Information()

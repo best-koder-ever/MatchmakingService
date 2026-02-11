@@ -13,10 +13,10 @@ public class HealthMetricsService : IHealthMetricsService
     private readonly MatchmakingDbContext _context;
     private readonly IMemoryCache _cache;
     private readonly ILogger<HealthMetricsService> _logger;
-    
+
     private const string CACHE_KEY = "health_metrics";
     private const int CACHE_DURATION_SECONDS = 60;
-    
+
     // Health status thresholds
     private const int QUEUE_SIZE_WARNING = 5000;
     private const int QUEUE_SIZE_CRITICAL = 10000;
@@ -24,7 +24,7 @@ public class HealthMetricsService : IHealthMetricsService
     private const double ERROR_RATE_CRITICAL = 5.0; // 5%
     private const double PROCESSING_TIME_WARNING = 50.0; // ms
     private const double PROCESSING_TIME_CRITICAL = 100.0; // ms
-    
+
     public HealthMetricsService(
         MatchmakingDbContext context,
         IMemoryCache cache,
@@ -34,7 +34,7 @@ public class HealthMetricsService : IHealthMetricsService
         _cache = cache;
         _logger = logger;
     }
-    
+
     public async Task<HealthMetricsResponse> GetHealthMetricsAsync()
     {
         // Try cache first
@@ -43,23 +43,23 @@ public class HealthMetricsService : IHealthMetricsService
             _logger.LogDebug("Returning cached health metrics");
             return cached;
         }
-        
+
         _logger.LogInformation("Collecting fresh health metrics");
-        
+
         try
         {
             // Collect metrics (parallel queries for performance)
             var metrics = await CollectMetricsAsync();
-            
+
             // Cache for 60 seconds
             _cache.Set(CACHE_KEY, metrics, TimeSpan.FromSeconds(CACHE_DURATION_SECONDS));
-            
+
             return metrics;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error collecting health metrics");
-            
+
             // Return degraded status on error
             return new HealthMetricsResponse
             {
@@ -68,28 +68,28 @@ public class HealthMetricsService : IHealthMetricsService
             };
         }
     }
-    
+
     private async Task<HealthMetricsResponse> CollectMetricsAsync()
     {
         var now = DateTime.UtcNow;
         var oneHourAgo = now.AddHours(-1);
-        
+
         // Parallel metric collection
         var queueSizeTask = GetQueueSizeAsync(oneHourAgo);
         var processingTimeTask = GetAverageProcessingTimeAsync();
         var errorRateTask = GetErrorRateAsync(oneHourAgo);
         var dailyLimitsTask = GetDailyLimitMetricsAsync();
-        
+
         await Task.WhenAll(queueSizeTask, processingTimeTask, errorRateTask, dailyLimitsTask);
-        
+
         var queueSize = await queueSizeTask;
         var avgProcessingTime = await processingTimeTask;
         var errorRate = await errorRateTask;
         var dailyLimitMetrics = await dailyLimitsTask;
-        
+
         // Determine health status
         var status = DetermineHealthStatus(queueSize, errorRate, avgProcessingTime);
-        
+
         return new HealthMetricsResponse
         {
             Status = status,
@@ -101,7 +101,7 @@ public class HealthMetricsService : IHealthMetricsService
             LastUpdated = now
         };
     }
-    
+
     private async Task<int> GetQueueSizeAsync(DateTime since)
     {
         try
@@ -111,7 +111,7 @@ public class HealthMetricsService : IHealthMetricsService
                 .AsNoTracking()
                 .Where(ui => ui.CreatedAt >= since)
                 .CountAsync();
-            
+
             return count;
         }
         catch (Exception ex)
@@ -120,7 +120,7 @@ public class HealthMetricsService : IHealthMetricsService
             return 0;
         }
     }
-    
+
     private async Task<double> GetAverageProcessingTimeAsync()
     {
         try
@@ -135,10 +135,10 @@ public class HealthMetricsService : IHealthMetricsService
                 .Take(100)
                 .Select(m => m.CreatedAt)
                 .ToListAsync();
-            
+
             if (!recentMatches.Any())
                 return 0;
-            
+
             // Simplified: assume avg processing time based on recent match rate
             // In production, you'd track actual processing timestamps
             var avgMs = 25.0; // Baseline assumption
@@ -150,7 +150,7 @@ public class HealthMetricsService : IHealthMetricsService
             return 0;
         }
     }
-    
+
     private async Task<double> GetErrorRateAsync(DateTime since)
     {
         try
@@ -161,14 +161,14 @@ public class HealthMetricsService : IHealthMetricsService
                 .AsNoTracking()
                 .Where(ui => ui.CreatedAt >= since)
                 .CountAsync();
-            
+
             if (totalOperations == 0)
                 return 0;
-            
+
             // For now, assume very low error rate (would be tracked in production)
             var errors = 0; // Would come from error tracking table
             var errorRate = (errors / (double)totalOperations) * 100;
-            
+
             return Math.Round(errorRate, 2);
         }
         catch (Exception ex)
@@ -177,13 +177,13 @@ public class HealthMetricsService : IHealthMetricsService
             return 0;
         }
     }
-    
+
     private async Task<DailyLimitMetrics> GetDailyLimitMetricsAsync()
     {
         try
         {
             var today = DateTime.UtcNow.Date;
-            
+
             // Count unique users who have interacted today
             var activeUsersToday = await _context.UserInteractions
                 .AsNoTracking()
@@ -191,7 +191,7 @@ public class HealthMetricsService : IHealthMetricsService
                 .Select(ui => ui.UserId)
                 .Distinct()
                 .CountAsync();
-            
+
             // Count users who have hit their daily limit (100 swipes for free users)
             var usersAtLimit = await _context.UserInteractions
                 .AsNoTracking()
@@ -199,11 +199,11 @@ public class HealthMetricsService : IHealthMetricsService
                 .GroupBy(ui => ui.UserId)
                 .Where(g => g.Count() >= 100) // Free tier limit
                 .CountAsync();
-            
+
             var percentageExhausted = activeUsersToday > 0
                 ? Math.Round((usersAtLimit / (double)activeUsersToday) * 100, 2)
                 : 0;
-            
+
             return new DailyLimitMetrics
             {
                 UsersAtLimit = usersAtLimit,
@@ -218,25 +218,25 @@ public class HealthMetricsService : IHealthMetricsService
             return new DailyLimitMetrics();
         }
     }
-    
+
     private string DetermineHealthStatus(int queueSize, double errorRate, double processingTime)
     {
         // Check critical thresholds
-        if (queueSize >= QUEUE_SIZE_CRITICAL || 
-            errorRate >= ERROR_RATE_CRITICAL || 
+        if (queueSize >= QUEUE_SIZE_CRITICAL ||
+            errorRate >= ERROR_RATE_CRITICAL ||
             processingTime >= PROCESSING_TIME_CRITICAL)
         {
             return "unhealthy";
         }
-        
+
         // Check warning thresholds
-        if (queueSize >= QUEUE_SIZE_WARNING || 
-            errorRate >= ERROR_RATE_WARNING || 
+        if (queueSize >= QUEUE_SIZE_WARNING ||
+            errorRate >= ERROR_RATE_WARNING ||
             processingTime >= PROCESSING_TIME_WARNING)
         {
             return "degraded";
         }
-        
+
         return "healthy";
     }
 }
