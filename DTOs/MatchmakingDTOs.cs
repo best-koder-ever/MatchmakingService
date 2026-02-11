@@ -9,7 +9,7 @@ namespace MatchmakingService.DTOs
         public string AlgorithmVersion { get; set; } = "v1.0";
         public bool? IsPremium { get; set; } = false;
     }
-    
+
     public class MatchSuggestionResponse
     {
         public int UserId { get; set; }
@@ -19,7 +19,7 @@ namespace MatchmakingService.DTOs
         public UserProfileSummary UserProfile { get; set; } = new();
         public string MatchReason { get; set; } = string.Empty;
     }
-    
+
     public class MatchScoreBreakdown
     {
         public double LocationScore { get; set; }
@@ -30,7 +30,7 @@ namespace MatchmakingService.DTOs
         public double ActivityScore { get; set; }
         public Dictionary<string, double> DetailedScores { get; set; } = new();
     }
-    
+
     public class UserProfileSummary
     {
         public int UserId { get; set; }
@@ -44,7 +44,7 @@ namespace MatchmakingService.DTOs
         public int Height { get; set; }
         public string PhotoUrl { get; set; } = string.Empty;
     }
-    
+
     public class MutualMatchRequest
     {
         public int User1Id { get; set; }
@@ -52,7 +52,7 @@ namespace MatchmakingService.DTOs
         public double? CompatibilityScore { get; set; }
         public string Source { get; set; } = "swipe";
     }
-    
+
     public class UpdatePreferencesRequest
     {
         public int UserId { get; set; }
@@ -63,7 +63,7 @@ namespace MatchmakingService.DTOs
         public List<string> Interests { get; set; } = new();
         public Dictionary<string, double> AlgorithmWeights { get; set; } = new();
     }
-    
+
     public class MatchStatsResponse
     {
         public int TotalMatches { get; set; }
@@ -73,7 +73,7 @@ namespace MatchmakingService.DTOs
         public DateTime LastMatchAt { get; set; }
         public List<string> TopMatchReasons { get; set; } = new();
     }
-    
+
     public class SwipeHistoryRequest
     {
         public int UserId { get; set; }
@@ -102,7 +102,7 @@ namespace MatchmakingService.DTOs
         public DateTime MatchedAt { get; set; }
         public double CompatibilityScore { get; set; }
         public string? MatchSource { get; set; }
-        
+
         // User profile details
         public string Name { get; set; } = string.Empty;
         public int Age { get; set; }
@@ -110,13 +110,13 @@ namespace MatchmakingService.DTOs
         public string? PrimaryPhotoUrl { get; set; }
         public string? City { get; set; }
         public double? DistanceKm { get; set; }
-        
+
         // Last message preview
         public string? LastMessagePreview { get; set; }
         public DateTime? LastMessageAt { get; set; }
         public bool? IsLastMessageFromMe { get; set; }
         public int? UnreadCount { get; set; }
-        
+
         // Status flags
         public bool IsActive { get; set; }
         public bool IsOnline { get; set; }

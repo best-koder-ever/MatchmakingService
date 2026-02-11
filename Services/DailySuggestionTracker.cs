@@ -15,7 +15,7 @@ namespace MatchmakingService.Services
         public int SuggestionsShownToday { get; set; }
         public int MaxDailySuggestions { get; set; }
         public int SuggestionsRemaining { get; set; }
-        public DateTime LastResetDate { get; set;}
+        public DateTime LastResetDate { get; set; }
         public DateTime NextResetDate { get; set; }
         public bool QueueExhausted { get; set; }
     }
@@ -37,7 +37,7 @@ namespace MatchmakingService.Services
             try
             {
                 await ResetIfNeededAsync(userId);
-                
+
                 if (!_state.TryGetValue(userId, out var state))
                 {
                     state = new UserDailySuggestionState
@@ -88,7 +88,7 @@ namespace MatchmakingService.Services
             try
             {
                 await ResetIfNeededAsync(userId);
-                
+
                 if (!_state.TryGetValue(userId, out var state))
                 {
                     state = new UserDailySuggestionState

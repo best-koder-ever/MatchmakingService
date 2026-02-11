@@ -26,11 +26,11 @@ namespace MatchmakingService.Data
             modelBuilder.Entity<Match>()
                 .HasIndex(m => m.User1Id)
                 .HasDatabaseName("IX_Match_User1Id");
-                
+
             modelBuilder.Entity<Match>()
                 .HasIndex(m => m.User2Id)
                 .HasDatabaseName("IX_Match_User2Id");
-                
+
             modelBuilder.Entity<Match>()
                 .HasIndex(m => new { m.User1Id, m.User2Id })
                 .IsUnique()

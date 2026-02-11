@@ -1,3 +1,4 @@
+using System.Net.Http;
 using Xunit;
 using Moq;
 using Microsoft.AspNetCore.Mvc;
@@ -8,6 +9,7 @@ using MatchmakingService.Services;
 using MatchmakingService.Data;
 using MatchmakingService.Models;
 using MatchmakingService.DTOs;
+using Microsoft.Extensions.Configuration;
 using CoreMatchmakingService = MatchmakingService.Services.MatchmakingService;
 // Alias to avoid conflict with Moq.Match
 using ModelMatch = MatchmakingService.Models.Match;
@@ -40,6 +42,8 @@ public class MatchmakingControllerTests_Implementation : IDisposable
         _mockNotification = new Mock<INotificationService>();
         _mockSuggestionTracker = new Mock<IDailySuggestionTracker>();
         _mockLogger = new Mock<ILogger<MatchmakingController>>();
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var mockConfiguration = new Mock<IConfiguration>();
 
         _controller = new MatchmakingController(
             _mockUserClient.Object,
@@ -48,7 +52,9 @@ public class MatchmakingControllerTests_Implementation : IDisposable
             _mockNotification.Object,
             _mockSuggestionTracker.Object,
             _context,
-            _mockLogger.Object
+            _mockLogger.Object,
+            mockHttpClientFactory.Object,
+            mockConfiguration.Object
         );
     }
 

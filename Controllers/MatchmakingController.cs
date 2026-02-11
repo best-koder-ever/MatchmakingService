@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Net.Http;
 using MatchmakingService.Models;
 using MatchmakingService.Services;
 using MatchmakingService.Data;
@@ -21,6 +23,8 @@ namespace MatchmakingService.Controllers
         private readonly IDailySuggestionTracker _suggestionTracker;
         private readonly MatchmakingDbContext _context;
         private readonly ILogger<MatchmakingController> _logger;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IConfiguration _configuration;
 
         public MatchmakingController(
             IUserServiceClient userServiceClient,
@@ -29,7 +33,9 @@ namespace MatchmakingService.Controllers
             INotificationService notificationService,
             IDailySuggestionTracker suggestionTracker,
             MatchmakingDbContext context,
-            ILogger<MatchmakingController> logger)
+            ILogger<MatchmakingController> logger,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration)
         {
             _userServiceClient = userServiceClient;
             _matchmakingService = matchmakingService;
@@ -38,6 +44,8 @@ namespace MatchmakingService.Controllers
             _suggestionTracker = suggestionTracker;
             _context = context;
             _logger = logger;
+            _httpClientFactory = httpClientFactory;
+            _configuration = configuration;
         }
 
         // POST: Handle mutual match notifications from SwipeService
@@ -47,7 +55,7 @@ namespace MatchmakingService.Controllers
             try
             {
                 // Calculate compatibility score if not provided
-                var compatibilityScore = request.CompatibilityScore ?? 
+                var compatibilityScore = request.CompatibilityScore ??
                     await _advancedMatchingService.CalculateCompatibilityScoreAsync(request.User1Id, request.User2Id);
 
                 // Save the match with enhanced details
@@ -69,10 +77,11 @@ namespace MatchmakingService.Controllers
 
                 _logger.LogInformation($"Match created between users {request.User1Id} and {request.User2Id} with score {compatibilityScore}");
 
-                return Ok(new { 
-                    Message = "Match saved successfully!", 
+                return Ok(new
+                {
+                    Message = "Match saved successfully!",
                     MatchId = match.Id,
-                    CompatibilityScore = compatibilityScore 
+                    CompatibilityScore = compatibilityScore
                 });
             }
             catch (Exception ex)
@@ -97,16 +106,16 @@ namespace MatchmakingService.Controllers
                 }
 
                 var isPremium = request.IsPremium ?? false;
-                
+
                 // Get current status before making request
                 var statusBefore = await _suggestionTracker.GetStatusAsync(request.UserId, isPremium);
-                
+
                 // Check if user has reached daily limit
                 if (statusBefore.SuggestionsRemaining <= 0)
                 {
-                    _logger.LogInformation("User {UserId} has reached daily suggestion limit ({Count}/{Max})", 
+                    _logger.LogInformation("User {UserId} has reached daily suggestion limit ({Count}/{Max})",
                         request.UserId, statusBefore.SuggestionsShownToday, statusBefore.MaxDailySuggestions);
-                    
+
                     return Ok(new FindMatchesResponse
                     {
                         Matches = new List<MatchSuggestionResponse>(),
@@ -116,20 +125,20 @@ namespace MatchmakingService.Controllers
                         DailyLimitReached = true,
                         NextResetAt = statusBefore.NextResetDate,
                         QueueExhausted = false,
-                        Message = isPremium 
+                        Message = isPremium
                             ? $"You've viewed all {statusBefore.MaxDailySuggestions} daily suggestions. Check back tomorrow!"
                             : $"You've reached your daily limit of {statusBefore.MaxDailySuggestions} profiles. Upgrade to Premium for {50 - statusBefore.MaxDailySuggestions} more!"
                     });
                 }
 
                 var matches = await _advancedMatchingService.FindMatchesAsync(request);
-                
+
                 // Get updated status after matches found
                 var statusAfter = await _suggestionTracker.GetStatusAsync(request.UserId, isPremium);
-                
+
                 // Determine if queue is exhausted (no more candidates available)
                 var queueExhausted = matches.Count == 0 && statusAfter.SuggestionsRemaining > 0;
-                
+
                 var message = queueExhausted
                     ? "No more profiles available right now. Try broadening your preferences!"
                     : matches.Count > 0
@@ -137,10 +146,10 @@ namespace MatchmakingService.Controllers
                         : statusAfter.SuggestionsRemaining > 0
                             ? "No matches found. Try adjusting your filters."
                             : "Daily limit reached. Check back tomorrow!";
-                
-                _logger.LogInformation("Found {Count} matches for user {UserId}. Remaining suggestions: {Remaining}/{Max}", 
+
+                _logger.LogInformation("Found {Count} matches for user {UserId}. Remaining suggestions: {Remaining}/{Max}",
                     matches.Count, request.UserId, statusAfter.SuggestionsRemaining, statusAfter.MaxDailySuggestions);
-                
+
                 return Ok(new FindMatchesResponse
                 {
                     Matches = matches,
@@ -175,7 +184,7 @@ namespace MatchmakingService.Controllers
                 }
 
                 var status = await _suggestionTracker.GetStatusAsync(userId, isPremium);
-                
+
                 var response = new DailySuggestionStatusResponse
                 {
                     SuggestionsShownToday = status.SuggestionsShownToday,
@@ -187,10 +196,10 @@ namespace MatchmakingService.Controllers
                     IsPremium = isPremium,
                     Tier = isPremium ? "premium" : "free"
                 };
-                
-                _logger.LogInformation("Daily suggestion status for user {UserId}: {Shown}/{Max} shown, {Remaining} remaining", 
+
+                _logger.LogInformation("Daily suggestion status for user {UserId}: {Shown}/{Max} shown, {Remaining} remaining",
                     userId, status.SuggestionsShownToday, status.MaxDailySuggestions, status.SuggestionsRemaining);
-                
+
                 return Ok(response);
             }
             catch (Exception ex)
@@ -212,8 +221,9 @@ namespace MatchmakingService.Controllers
                 }
 
                 var score = await _advancedMatchingService.CalculateCompatibilityScoreAsync(userId, targetUserId);
-                
-                return Ok(new { 
+
+                return Ok(new
+                {
                     UserId = userId,
                     TargetUserId = targetUserId,
                     CompatibilityScore = Math.Round(score, 1),
@@ -240,14 +250,15 @@ namespace MatchmakingService.Controllers
                 // Extract userId from JWT claims (when auth is enabled)
                 // For now, expect userId in query string or header for backwards compatibility
                 var userIdClaim = User.FindFirst("sub")?.Value ?? User.FindFirst("user_id")?.Value;
-                
+
                 if (string.IsNullOrEmpty(userIdClaim))
                 {
                     // Fallback: check query parameter for demo/testing purposes
                     var userIdParam = Request.Query["userId"].FirstOrDefault();
                     if (string.IsNullOrEmpty(userIdParam))
                     {
-                        return BadRequest(new { 
+                        return BadRequest(new
+                        {
                             Error = "User ID not found in authentication token",
                             Message = "Please include userId query parameter or ensure valid JWT token"
                         });
@@ -294,10 +305,11 @@ namespace MatchmakingService.Controllers
                     })
                     .ToListAsync();
 
-                _logger.LogInformation("Retrieved {Count} matches for authenticated user {UserId} (page {Page}/{PageSize})", 
+                _logger.LogInformation("Retrieved {Count} matches for authenticated user {UserId} (page {Page}/{PageSize})",
                     matches.Count, userId, page, pageSize);
 
-                return Ok(new { 
+                return Ok(new
+                {
                     Matches = matches,
                     TotalCount = totalCount,
                     ActiveCount = matches.Count(m => m.IsActive),
@@ -313,21 +325,58 @@ namespace MatchmakingService.Controllers
             }
         }
 
-        // GET: Retrieve matches for a user with enhanced details (admin/specific user lookup)
+        // GET: Retrieve matches for a user — accepts UUID string or integer ID
         [HttpGet("matches/{userId}")]
-        public async Task<IActionResult> GetMatchesForUser(int userId, [FromQuery] bool includeInactive = false)
+        public async Task<IActionResult> GetMatchesForUser(string userId, [FromQuery] bool includeInactive = false)
         {
             try
             {
-                if (userId <= 0)
+                int profileId;
+
+                if (int.TryParse(userId, out profileId))
+                {
+                    // Already an integer — use directly
+                }
+                else
+                {
+                    // UUID string from Flutter — resolve to integer profile ID via UserService
+                    var userServiceUrl = _configuration["Services:UserService:BaseUrl"]
+                        ?? "http://localhost:8082";
+                    var client = _httpClientFactory.CreateClient();
+                    var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+                    if (!string.IsNullOrEmpty(authHeader))
+                        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", authHeader);
+
+                    var meResponse = await client.GetAsync($"{userServiceUrl}/api/profiles/me");
+                    if (!meResponse.IsSuccessStatusCode)
+                    {
+                        _logger.LogWarning("Failed to resolve UUID {UserId} to profile ID", userId);
+                        return Ok(new List<object>());
+                    }
+
+                    var meContent = await meResponse.Content.ReadAsStringAsync();
+                    using var meDoc = JsonDocument.Parse(meContent);
+                    if (meDoc.RootElement.TryGetProperty("data", out var meData) &&
+                        meData.TryGetProperty("id", out var meId))
+                    {
+                        profileId = meId.GetInt32();
+                        _logger.LogInformation("Resolved UUID {UserId} to profile ID {ProfileId}", userId, profileId);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Could not extract profile ID from /api/profiles/me for {UserId}", userId);
+                        return Ok(new List<object>());
+                    }
+                }
+
+                if (profileId <= 0)
                 {
                     return BadRequest("Invalid user ID");
                 }
 
-                // Use AsNoTracking() for read-only query optimization
                 var query = _context.Matches
                     .AsNoTracking()
-                    .Where(m => m.User1Id == userId || m.User2Id == userId);
+                    .Where(m => m.User1Id == profileId || m.User2Id == profileId);
 
                 if (!includeInactive)
                 {
@@ -338,28 +387,26 @@ namespace MatchmakingService.Controllers
                     .OrderByDescending(m => m.CreatedAt)
                     .Select(m => new
                     {
-                        MatchId = m.Id,
-                        MatchedUserId = m.User1Id == userId ? m.User2Id : m.User1Id,
-                        MatchedAt = m.CreatedAt,
-                        CompatibilityScore = m.CompatibilityScore,
-                        IsActive = m.IsActive,
-                        MatchSource = m.MatchSource,
-                        LastMessageAt = m.LastMessageAt,
-                        LastMessageByUserId = m.LastMessageByUserId,
-                        UnmatchedAt = m.UnmatchedAt,
-                        UnmatchedByUserId = m.UnmatchedByUserId
+                        matchId = m.Id,
+                        matchedUserId = m.User1Id == profileId ? m.User2Id : m.User1Id,
+                        matchedAt = m.CreatedAt,
+                        compatibilityScore = m.CompatibilityScore,
+                        isActive = m.IsActive,
+                        matchSource = m.MatchSource,
+                        lastMessageAt = m.LastMessageAt,
+                        lastMessageByUserId = m.LastMessageByUserId
                     })
                     .ToListAsync();
 
-                return Ok(new { 
-                    Matches = matches,
-                    TotalCount = matches.Count,
-                    ActiveCount = matches.Count(m => m.IsActive)
-                });
+                _logger.LogInformation("Returning {Count} matches for user {UserId} (profile {ProfileId})",
+                    matches.Count, userId, profileId);
+
+                // Return as flat JSON array (Flutter expects List<dynamic>)
+                return Ok(matches);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error retrieving matches for user {userId}");
+                _logger.LogError(ex, "Error retrieving matches for user {UserId}", userId);
                 return StatusCode(500, "Error retrieving matches");
             }
         }
@@ -395,10 +442,10 @@ namespace MatchmakingService.Controllers
                 foreach (var match in matches)
                 {
                     var matchedUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
-                    
+
                     // Fetch user profile from UserService
                     var userProfile = await _userServiceClient.GetUserProfileAsync(matchedUserId);
-                    
+
                     if (userProfile == null)
                     {
                         _logger.LogWarning("Could not fetch profile for user {UserId}", matchedUserId);
@@ -412,7 +459,7 @@ namespace MatchmakingService.Controllers
                         MatchedAt = match.CreatedAt,
                         CompatibilityScore = Math.Round(match.CompatibilityScore, 1),
                         MatchSource = match.MatchSource,
-                        
+
                         // User profile details (from matchmaking-local UserProfile)
                         Name = $"User {matchedUserId}", // TODO: Fetch from UserService API when available
                         Age = userProfile.Age,
@@ -420,13 +467,13 @@ namespace MatchmakingService.Controllers
                         PrimaryPhotoUrl = $"/api/photos/{matchedUserId}/primary",
                         City = userProfile.City,
                         DistanceKm = null, // Could calculate from lat/long if needed
-                        
+
                         // Message preview (stub - to be implemented when messaging API available)
                         LastMessagePreview = null,
                         LastMessageAt = match.LastMessageAt,
                         IsLastMessageFromMe = match.LastMessageByUserId == userId,
                         UnreadCount = null, // TODO: Call messaging service for unread count
-                        
+
                         // Status
                         IsActive = match.IsActive,
                         IsOnline = false // TODO: Could integrate with presence service
@@ -443,7 +490,7 @@ namespace MatchmakingService.Controllers
                     UnreadMessagesCount = unreadCount
                 };
 
-                _logger.LogInformation("Retrieved {Count} consolidated matches for user {UserId}", 
+                _logger.LogInformation("Retrieved {Count} consolidated matches for user {UserId}",
                     consolidatedMatches.Count, userId);
 
                 return Ok(response);
@@ -488,7 +535,7 @@ namespace MatchmakingService.Controllers
                 }
 
                 var match = await _context.Matches
-                    .FirstOrDefaultAsync(m => 
+                    .FirstOrDefaultAsync(m =>
                         (m.User1Id == Math.Min(userId, targetUserId) && m.User2Id == Math.Max(userId, targetUserId)) &&
                         m.IsActive);
 
@@ -636,7 +683,7 @@ namespace MatchmakingService.Controllers
                 }
 
                 await _advancedMatchingService.RecordSwipeHistoryAsync(request);
-                
+
                 return Ok(new { Message = "Swipe history recorded successfully" });
             }
             catch (Exception ex)
@@ -652,7 +699,8 @@ namespace MatchmakingService.Controllers
             try
             {
                 var dbConnected = _context.Database.CanConnect();
-                return Ok(new { 
+                return Ok(new
+                {
                     Status = "Healthy",
                     Timestamp = DateTime.UtcNow,
                     DatabaseConnected = dbConnected,
@@ -662,9 +710,10 @@ namespace MatchmakingService.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Health check failed");
-                return StatusCode(500, new { 
+                return StatusCode(500, new
+                {
                     Status = "Unhealthy",
-                    Error = ex.Message 
+                    Error = ex.Message
                 });
             }
         }

@@ -18,7 +18,7 @@ namespace MatchmakingService.Models
         public DateTime CalculatedAt { get; set; } = DateTime.UtcNow;
         public bool IsValid { get; set; } = true; // Cache invalidation flag
     }
-    
+
     [Table("MatchPreferences")]
     public class MatchPreference
     {
@@ -30,7 +30,7 @@ namespace MatchmakingService.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
-    
+
     [Table("MatchingAlgorithmMetrics")]
     public class MatchingAlgorithmMetric
     {
