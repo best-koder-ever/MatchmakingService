@@ -3,6 +3,7 @@ using MatchmakingService.Data;
 using MatchmakingService.Extensions;
 using MatchmakingService.Services;
 using MatchmakingService.Common;
+using MatchmakingService.Filters;
 using MatchmakingService.Common;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -111,11 +112,14 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IHealthMetricsService, HealthMetricsService>();
 builder.Services.AddHttpClient();
 
-// Register scoring configuration
-var scoringConfig = new MatchmakingService.Models.ScoringConfiguration();
-builder.Configuration.GetSection("Scoring").Bind(scoringConfig);
-builder.Services.AddSingleton(scoringConfig);
+// Register scoring configuration with hot-reload support
+builder.Services.Configure<MatchmakingService.Models.ScoringConfiguration>(
+    builder.Configuration.GetSection("Scoring"));
 
+
+// Register candidate system configuration with hot-reload support
+builder.Services.Configure<MatchmakingService.Models.CandidateOptions>(
+    builder.Configuration.GetSection("CandidateOptions"));
 // Register daily suggestion limits configuration
 builder.Services.Configure<MatchmakingService.Models.DailySuggestionLimits>(
     builder.Configuration.GetSection("DailySuggestionLimits"));
@@ -139,6 +143,24 @@ builder.Services.AddDbContext<MatchmakingDbContext>(options =>
 // Internal API Key Authentication for service-to-service calls
 builder.Services.AddScoped<InternalApiKeyAuthFilter>();
 builder.Services.AddTransient<InternalApiKeyAuthHandler>();
+// T168/T169: Candidate filter pipeline
+builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.SelfExclusionFilter>();
+builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.ActiveUserFilter>();
+builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.GenderFilter>();
+builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.AgeRangeFilter>();
+builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.ExcludeSwipedFilter>();
+builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.ExcludeBlockedFilter>();
+builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.DistanceFilter>();
+builder.Services.AddScoped<MatchmakingService.Filters.CandidateFilterPipeline>();
+
+// Phase 14.4: Candidate strategies
+builder.Services.AddScoped<MatchmakingService.Strategies.LiveScoringStrategy>();
+builder.Services.AddScoped<MatchmakingService.Strategies.PreComputedStrategy>();
+builder.Services.AddScoped<MatchmakingService.Strategies.StrategyResolver>();
+
+// Phase 14.5: Background scoring service
+builder.Services.AddHostedService<MatchmakingService.Services.Background.ScoreRefreshBackgroundService>();
+builder.Services.AddScoped<MatchmakingService.Services.DesirabilityCalculator>();
 
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>
 {
@@ -152,6 +174,12 @@ builder.Services.AddHttpClient<ISafetyServiceClient, SafetyServiceClient>(client
 })
 .AddHttpMessageHandler<InternalApiKeyAuthHandler>();
 
+
+builder.Services.AddHttpClient<ISwipeServiceClient, SwipeServiceClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
+})
+.AddHttpMessageHandler<InternalApiKeyAuthHandler>();
 builder.Services.AddHealthChecks();
 
 // Configure OpenTelemetry for metrics and distributed tracing

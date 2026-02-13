@@ -43,5 +43,12 @@ namespace MatchmakingService.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         public bool IsActive { get; set; } = true;
+    
+        // Candidate system fields (T164)
+        public DateTime LastActiveAt { get; set; } = DateTime.UtcNow;
+        public string LookingFor { get; set; } = string.Empty; // Relationship, Casual, Friendship, NotSure
+        public bool IsVerified { get; set; } = false;
+        public double DesirabilityScore { get; set; } = 50.0; // ELO-inspired 0-100
+
     }
 }

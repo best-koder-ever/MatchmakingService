@@ -42,6 +42,13 @@ namespace MatchmakingService.Models
         public double DefaultLifestyleWeight { get; set; } = 2.5;
 
         /// <summary>
+        /// Weight for activity/recency score in overall compatibility (0-10 scale)
+        /// Applied as a fixed weight alongside user-customizable weights.
+        /// Recommendation: 0.5 - Small influence, rewards active users
+        /// </summary>
+        public double ActivityScoreWeight { get; set; } = 0.5;
+
+        /// <summary>
         /// Minimum compatibility score required for match suggestions (0-100)
         /// Recommendation: 60 - Only suggest reasonably compatible matches
         /// </summary>
@@ -60,10 +67,18 @@ namespace MatchmakingService.Models
         public int ScoreCacheHours { get; set; } = 24;
 
         /// <summary>
-        /// Penalty for children preference mismatch (points deducted)
+        /// Penalty for children preference mismatch (points deducted from lifestyle score)
+        /// Applied when WantsChildren differs between users.
         /// Recommendation: 30 - Strong dealbreaker for many people
         /// </summary>
         public double ChildrenMismatchPenalty { get; set; } = 30.0;
+
+        /// <summary>
+        /// Penalty when one user has children and the other doesn't (points deducted)
+        /// Applied on top of ChildrenMismatchPenalty if WantsChildren also differs.
+        /// Recommendation: 15 - Moderate additional factor
+        /// </summary>
+        public double HasChildrenMismatchPenalty { get; set; } = 15.0;
 
         /// <summary>
         /// Penalty for smoking habit mismatch (points deducted)
@@ -82,5 +97,12 @@ namespace MatchmakingService.Models
         /// Recommendation: 10 - Lower penalty, many people are flexible
         /// </summary>
         public double ReligionMismatchPenalty { get; set; } = 10.0;
+
+        /// <summary>
+        /// Half-life in days for activity score exponential decay.
+        /// After this many days of inactivity, the activity score drops to 50%.
+        /// Recommendation: 7 - Weekly active users get good scores
+        /// </summary>
+        public double ActivityScoreHalfLifeDays { get; set; } = 7.0;
     }
 }

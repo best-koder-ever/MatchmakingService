@@ -58,6 +58,29 @@ namespace MatchmakingService.Data
                 .HasIndex(up => up.Gender)
                 .HasDatabaseName("IX_UserProfile_Gender");
 
+            // T164: New field column configurations
+            modelBuilder.Entity<UserProfile>()
+                .Property(up => up.LookingFor)
+                .HasMaxLength(50);
+
+            modelBuilder.Entity<UserProfile>()
+                .Property(up => up.DesirabilityScore)
+                .HasDefaultValue(50.0);
+
+            modelBuilder.Entity<UserProfile>()
+                .Property(up => up.LastActiveAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+
+            // T165: Composite indexes for filter pipeline performance
+            modelBuilder.Entity<UserInteraction>()
+                .HasIndex(ui => new { ui.UserId, ui.TargetUserId })
+                .HasDatabaseName("IX_UserInteraction_UserLookup");
+
+            modelBuilder.Entity<UserProfile>()
+                .HasIndex(up => new { up.IsActive, up.DesirabilityScore })
+                .HasDatabaseName("IX_UserProfile_Desirability");
+
+
             // MatchScore entity configuration
             modelBuilder.Entity<MatchScore>()
                 .HasIndex(ms => ms.UserId)

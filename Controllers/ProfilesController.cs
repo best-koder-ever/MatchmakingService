@@ -1,5 +1,6 @@
+using MatchmakingService.Models;
+using MatchmakingService.Strategies;
 using Microsoft.AspNetCore.Mvc;
-using System.Net.Http;
 using System.Text.Json;
 
 namespace MatchmakingService.Controllers
@@ -8,15 +9,18 @@ namespace MatchmakingService.Controllers
     [Route("api/matchmaking")]
     public class ProfilesController : ControllerBase
     {
+        private readonly StrategyResolver _strategyResolver;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _configuration;
         private readonly ILogger<ProfilesController> _logger;
 
         public ProfilesController(
+            StrategyResolver strategyResolver,
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
             ILogger<ProfilesController> logger)
         {
+            _strategyResolver = strategyResolver;
             _httpClientFactory = httpClientFactory;
             _configuration = configuration;
             _logger = logger;
@@ -24,11 +28,115 @@ namespace MatchmakingService.Controllers
 
         /// <summary>
         /// GET /api/matchmaking/profiles/{userId}
-        /// Returns candidate profiles for the Discover screen.
-        /// userId can be a Keycloak UUID or integer profile ID.
+        /// Returns scored, filtered, ranked candidate profiles for the Discover screen.
+        /// T179: Strategy-backed. T180: Optional query params.
         /// </summary>
         [HttpGet("profiles/{userId}")]
-        public async Task<IActionResult> GetProfiles(string userId)
+        public async Task<IActionResult> GetProfiles(
+            string userId,
+            [FromQuery] int? limit = null,
+            [FromQuery] double? minScore = null,
+            [FromQuery] int? activeWithin = null,
+            [FromQuery] bool? onlyVerified = null,
+            [FromQuery] string? strategy = null)
+        {
+            try
+            {
+                // Resolve integer user ID from path (supports Keycloak UUID or integer)
+                if (!int.TryParse(userId, out var userIdInt))
+                {
+                    _logger.LogWarning("Non-integer userId '{UserId}' — strategy requires integer ID", userId);
+                    return Ok(new List<object>());
+                }
+
+                // Clamp query params (T180 — invalid values → defaults, never error)
+                var clampedLimit = Math.Clamp(limit ?? 20, 1, 50);
+                var clampedMinScore = Math.Clamp(minScore ?? 0, 0, 100);
+                var clampedActiveWithin = activeWithin.HasValue
+                    ? Math.Clamp(activeWithin.Value, 1, 365)
+                    : (int?)null;
+
+                var request = new CandidateRequest(
+                    Limit: clampedLimit,
+                    MinScore: clampedMinScore,
+                    ActiveWithinDays: clampedActiveWithin,
+                    OnlyVerified: onlyVerified ?? false);
+
+                var resolvedStrategy = _strategyResolver.Resolve(strategy);
+                var result = await resolvedStrategy.GetCandidatesAsync(userIdInt, request);
+
+                // Map ScoredCandidate → JSON shape matching Flutter MatchCandidate.fromJson
+                var response = result.Candidates.Select(c => MapToFlutterShape(c)).ToList();
+
+                _logger.LogInformation(
+                    "Returning {Count} candidates for user {UserId} via {Strategy} in {Ms}ms",
+                    response.Count, userId, result.StrategyUsed,
+                    result.ExecutionTime.TotalMilliseconds);
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Strategy pipeline failed for user {UserId}, falling back to legacy", userId);
+                return await GetProfilesLegacy(userId);
+            }
+        }
+
+        /// <summary>
+        /// Maps a ScoredCandidate to the JSON shape Flutter expects.
+        /// Flutter MatchCandidate.fromJson reads: userId, displayName, age, bio,
+        /// city, photoUrl, photoUrls, compatibility/compatibilityScore, interests, etc.
+        /// </summary>
+        private static object MapToFlutterShape(ScoredCandidate scored)
+        {
+            var p = scored.Profile;
+            return new
+            {
+                userId = p.UserId,
+                id = p.UserId,
+                displayName = (string?)null ?? $"User {p.UserId}",
+                name = (string?)null ?? $"User {p.UserId}",
+                age = p.Age,
+                bio = "",
+                city = p.City ?? "",
+                gender = p.Gender ?? "",
+                compatibility = scored.FinalScore,
+                compatibilityScore = scored.CompatibilityScore,
+                activityScore = scored.ActivityScore,
+                desirabilityScore = scored.DesirabilityScore,
+                finalScore = scored.FinalScore,
+                strategyUsed = scored.StrategyUsed,
+                interests = ParseInterests(p.Interests),
+                isVerified = p.IsVerified,
+                // Empty defaults for fields we don't have at matchmaking level
+                photoUrl = (string?)null,
+                photoUrls = Array.Empty<string>(),
+                prompts = Array.Empty<object>(),
+                voicePromptUrl = (string?)null,
+                occupation = (string?)null,
+                education = (string?)null,
+                height = (int?)null,
+                distanceKm = (double?)null,
+            };
+        }
+
+        private static List<string> ParseInterests(string? interests)
+        {
+            if (string.IsNullOrWhiteSpace(interests)) return new List<string>();
+            try
+            {
+                return JsonSerializer.Deserialize<List<string>>(interests) ?? new List<string>();
+            }
+            catch
+            {
+                return interests.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            }
+        }
+
+        /// <summary>
+        /// Legacy fallback: dumb-proxy to UserService. Only used if strategy pipeline throws.
+        /// </summary>
+        private async Task<IActionResult> GetProfilesLegacy(string userId)
         {
             try
             {
@@ -40,7 +148,6 @@ namespace MatchmakingService.Controllers
                 if (!string.IsNullOrEmpty(authHeader))
                     client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", authHeader);
 
-                // Get the requesting user's integer profile ID via /api/profiles/me
                 int? myProfileId = null;
                 try
                 {
@@ -57,16 +164,15 @@ namespace MatchmakingService.Controllers
                         meDoc.Dispose();
                     }
                 }
-                catch { }
+                catch { /* best effort */ }
 
-                // Fetch all profiles via UserService demo search (returns rich data with photos, prompts, voice)
                 var searchResponse = await client.PostAsync(
                     $"{userServiceUrl}/api/demo/search",
                     new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
 
                 if (!searchResponse.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("Demo search returned {StatusCode}", searchResponse.StatusCode);
+                    _logger.LogWarning("Legacy demo search returned {StatusCode}", searchResponse.StatusCode);
                     return Ok(new List<object>());
                 }
 
@@ -74,22 +180,14 @@ namespace MatchmakingService.Controllers
                 var doc = JsonDocument.Parse(content);
                 var results = new List<object>();
 
-                // DemoController returns SearchResultDto directly (results at top level)
-                // Real controller wraps in ApiResponse (data.results)
                 JsonElement profileArray;
                 bool found = false;
 
-                // Try ApiResponse wrapper first: { data: { results: [...] } }
                 if (doc.RootElement.TryGetProperty("data", out var data) &&
                     data.TryGetProperty("results", out profileArray))
-                {
                     found = true;
-                }
-                // Try direct SearchResultDto: { results: [...] }
                 else if (doc.RootElement.TryGetProperty("results", out profileArray))
-                {
                     found = true;
-                }
 
                 if (found)
                 {
@@ -98,9 +196,7 @@ namespace MatchmakingService.Controllers
                         if (myProfileId.HasValue &&
                             profile.TryGetProperty("id", out var idProp) &&
                             idProp.GetInt32() == myProfileId.Value)
-                        {
                             continue;
-                        }
 
                         var obj = JsonSerializer.Deserialize<object>(profile.GetRawText());
                         if (obj != null) results.Add(obj);
@@ -109,14 +205,14 @@ namespace MatchmakingService.Controllers
 
                 doc.Dispose();
 
-                _logger.LogInformation("Returning {Count} candidate profiles for user {UserId}",
+                _logger.LogWarning("Returning {Count} UNSCORED profiles via legacy fallback for user {UserId}",
                     results.Count, userId);
 
                 return Ok(results);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching profiles for user {UserId}", userId);
+                _logger.LogError(ex, "Legacy fallback also failed for user {UserId}", userId);
                 return StatusCode(500, "Error fetching profiles");
             }
         }

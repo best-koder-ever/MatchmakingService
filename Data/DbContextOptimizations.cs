@@ -15,7 +15,7 @@ namespace MatchmakingService.Data
 
             // UserProfile: Filter by IsActive + Gender + Age range (for candidate filtering)
             modelBuilder.Entity<UserProfile>()
-                .HasIndex(up => new { up.IsActive, up.Gender, up.Age })
+                .HasIndex(up => new { up.IsActive, up.Gender, up.Age, up.LastActiveAt })
                 .HasDatabaseName("IX_UserProfile_ActiveSearch");
 
             // UserProfiles: PreferredGender + IsActive (for matchmaking)

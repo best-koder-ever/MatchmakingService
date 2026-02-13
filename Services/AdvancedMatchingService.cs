@@ -2,6 +2,7 @@ using MatchmakingService.Data;
 using MatchmakingService.Models;
 using MatchmakingService.DTOs;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace MatchmakingService.Services
@@ -20,6 +21,8 @@ namespace MatchmakingService.Services
         private readonly MatchmakingDbContext _context;
         private readonly IUserServiceClient _userServiceClient;
         private readonly ISafetyServiceClient _safetyServiceClient;
+        private readonly ISwipeServiceClient _swipeServiceClient;
+        private readonly IOptionsMonitor<ScoringConfiguration> _scoringConfig;
         private readonly ILogger<AdvancedMatchingService> _logger;
         private readonly IDailySuggestionTracker _suggestionTracker;
 
@@ -27,12 +30,16 @@ namespace MatchmakingService.Services
             MatchmakingDbContext context,
             IUserServiceClient userServiceClient,
             ISafetyServiceClient safetyServiceClient,
+            ISwipeServiceClient swipeServiceClient,
+            IOptionsMonitor<ScoringConfiguration> scoringConfig,
             ILogger<AdvancedMatchingService> logger,
             IDailySuggestionTracker suggestionTracker)
         {
             _context = context;
             _userServiceClient = userServiceClient;
             _safetyServiceClient = safetyServiceClient;
+            _swipeServiceClient = swipeServiceClient;
+            _scoringConfig = scoringConfig;
             _logger = logger;
             _suggestionTracker = suggestionTracker;
         }
@@ -44,7 +51,7 @@ namespace MatchmakingService.Services
                 var userProfile = await GetUserProfileAsync(request.UserId);
                 if (userProfile == null)
                 {
-                    _logger.LogWarning($"User profile not found for user {request.UserId}");
+                    _logger.LogWarning("User profile not found for user {UserId}", request.UserId);
                     return new List<MatchSuggestionResponse>();
                 }
 
@@ -54,7 +61,7 @@ namespace MatchmakingService.Services
 
                 if (!allowed)
                 {
-                    _logger.LogInformation($"User {request.UserId} has reached daily suggestion limit");
+                    _logger.LogInformation("User {UserId} has reached daily suggestion limit", request.UserId);
                     return new List<MatchSuggestionResponse>();
                 }
 
@@ -72,13 +79,16 @@ namespace MatchmakingService.Services
                     swipedUserIds.Add(blockedId); // Add to exclusion list
                 }
 
-                _logger.LogInformation($"Excluding {blockedUserIds.Count} blocked users from matchmaking for user {request.UserId}");
+                _logger.LogInformation("Excluding {BlockedCount} blocked users from matchmaking for user {UserId}",
+                    blockedUserIds.Count, request.UserId);
 
                 // Get potential matches based on basic criteria
                 var potentialMatches = await GetPotentialMatchesQuery(userProfile, swipedUserIds)
                     .Take(request.Limit * 3) // Get more than needed for better filtering
                     .ToListAsync();
 
+                var config = _scoringConfig.CurrentValue;
+                var minScore = request.MinScore ?? config.MinimumCompatibilityThreshold;
                 var suggestions = new List<MatchSuggestionResponse>();
 
                 foreach (var targetProfile in potentialMatches)
@@ -87,7 +97,7 @@ namespace MatchmakingService.Services
 
                     var compatibilityScore = await CalculateCompatibilityScoreAsync(request.UserId, targetProfile.UserId);
 
-                    if (compatibilityScore >= (request.MinScore ?? 0))
+                    if (compatibilityScore >= minScore)
                     {
                         var suggestion = await CreateMatchSuggestion(userProfile, targetProfile, compatibilityScore);
                         suggestions.Add(suggestion);
@@ -104,7 +114,7 @@ namespace MatchmakingService.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error finding matches for user {request.UserId}");
+                _logger.LogError(ex, "Error finding matches for user {UserId}", request.UserId);
                 throw;
             }
         }
@@ -117,12 +127,14 @@ namespace MatchmakingService.Services
             if (userProfile == null || targetProfile == null)
                 return 0.0;
 
+            var config = _scoringConfig.CurrentValue;
+
             // Check if we have a cached score
             var cachedScore = await _context.MatchScores
                 .AsNoTracking()
                 .FirstOrDefaultAsync(ms => ms.UserId == userId && ms.TargetUserId == targetUserId && ms.IsValid);
 
-            if (cachedScore != null && (DateTime.UtcNow - cachedScore.CalculatedAt).TotalHours < 24)
+            if (cachedScore != null && (DateTime.UtcNow - cachedScore.CalculatedAt).TotalHours < config.ScoreCacheHours)
             {
                 return cachedScore.OverallScore;
             }
@@ -142,19 +154,20 @@ namespace MatchmakingService.Services
             var lifestyleScore = CalculateLifestyleScore(userProfile, targetProfile);
             var activityScore = await CalculateActivityScore(userId, targetUserId);
 
-            // Apply user's preference weights
+            // Apply user's preference weights + configurable activity weight
+            var activityWeight = config.ActivityScoreWeight;
             var weightedScore =
                 (locationScore * userProfile.LocationWeight) +
                 (ageScore * userProfile.AgeWeight) +
                 (interestsScore * userProfile.InterestsWeight) +
                 (educationScore * userProfile.EducationWeight) +
                 (lifestyleScore * userProfile.LifestyleWeight) +
-                (activityScore * 0.5); // Activity score has fixed weight
+                (activityScore * activityWeight);
 
             // Normalize to 0-100 scale
             var totalWeight = userProfile.LocationWeight + userProfile.AgeWeight +
                              userProfile.InterestsWeight + userProfile.EducationWeight +
-                             userProfile.LifestyleWeight + 0.5;
+                             userProfile.LifestyleWeight + activityWeight;
 
             var overallScore = Math.Min(100, weightedScore / totalWeight);
 
@@ -240,25 +253,26 @@ namespace MatchmakingService.Services
 
         private double CalculateLifestyleScore(UserProfile user, UserProfile target)
         {
+            var config = _scoringConfig.CurrentValue;
             var score = 100.0;
 
-            // Children compatibility
+            // Children compatibility — uses configurable penalties
             if (user.WantsChildren != target.WantsChildren)
-                score -= 30;
+                score -= config.ChildrenMismatchPenalty;
 
             if (user.HasChildren != target.HasChildren && (user.HasChildren || target.HasChildren))
-                score -= 15;
+                score -= config.HasChildrenMismatchPenalty;
 
-            // Smoking compatibility
-            score -= GetLifestylePenalty(user.SmokingStatus, target.SmokingStatus, 20);
+            // Smoking compatibility — uses configurable max penalty
+            score -= GetLifestylePenalty(user.SmokingStatus, target.SmokingStatus, config.SmokingMismatchPenalty);
 
-            // Drinking compatibility
-            score -= GetLifestylePenalty(user.DrinkingStatus, target.DrinkingStatus, 15);
+            // Drinking compatibility — uses configurable max penalty
+            score -= GetLifestylePenalty(user.DrinkingStatus, target.DrinkingStatus, config.DrinkingMismatchPenalty);
 
-            // Religion compatibility
+            // Religion compatibility — uses configurable penalty
             if (!string.IsNullOrEmpty(user.Religion) && !string.IsNullOrEmpty(target.Religion) &&
                 !user.Religion.Equals(target.Religion, StringComparison.OrdinalIgnoreCase))
-                score -= 10;
+                score -= config.ReligionMismatchPenalty;
 
             return Math.Max(0, score);
         }
@@ -285,9 +299,31 @@ namespace MatchmakingService.Services
 
         private async Task<double> CalculateActivityScore(int userId, int targetUserId)
         {
-            // This would integrate with app usage data
-            // For now, return a base score that could be enhanced
-            return 75.0;
+            var config = _scoringConfig.CurrentValue;
+            var halfLifeDays = config.ActivityScoreHalfLifeDays;
+
+            // Use target user's UpdatedAt as proxy for last active time
+            // (will be replaced with dedicated LastActiveAt field in T164)
+            var targetProfile = await _context.UserProfiles
+                .AsNoTracking()
+                .Where(up => up.UserId == targetUserId)
+                .Select(up => new { up.UpdatedAt })
+                .FirstOrDefaultAsync();
+
+            if (targetProfile == null)
+                return 0.0;
+
+            var daysSinceActive = (DateTime.UtcNow - targetProfile.UpdatedAt).TotalDays;
+
+            if (daysSinceActive <= 0)
+                return 100.0; // Active right now
+
+            // Exponential decay: score = 100 * e^(-ln(2)/halfLife * days)
+            // At halfLifeDays, score = 50. At 2*halfLifeDays, score = 25. Etc.
+            var decayRate = Math.Log(2) / halfLifeDays;
+            var score = 100.0 * Math.Exp(-decayRate * daysSinceActive);
+
+            return Math.Max(0, Math.Round(score, 1));
         }
 
         private double CalculateDistance(double lat1, double lon1, double lat2, double lon2)
@@ -316,9 +352,26 @@ namespace MatchmakingService.Services
 
         private async Task<HashSet<int>> GetSwipedUserIdsAsync(int userId)
         {
-            // This would call the SwipeService to get swiped users
-            // For now, return empty set
-            return new HashSet<int>();
+            // Query SwipeService for all swiped user IDs (both likes and passes)
+            var swipedIds = await _swipeServiceClient.GetSwipedUserIdsAsync(userId);
+
+            // Also check local UserInteractions table as a fallback/supplement
+            var localSwipedIds = await _context.UserInteractions
+                .AsNoTracking()
+                .Where(ui => ui.UserId == userId)
+                .Select(ui => ui.TargetUserId)
+                .ToListAsync();
+
+            foreach (var id in localSwipedIds)
+            {
+                swipedIds.Add(id);
+            }
+
+            _logger.LogDebug(
+                "Total swiped user IDs for user {UserId}: {Count} (remote: {RemoteCount}, local: {LocalCount})",
+                userId, swipedIds.Count, swipedIds.Count - localSwipedIds.Count, localSwipedIds.Count);
+
+            return swipedIds;
         }
 
         private IQueryable<UserProfile> GetPotentialMatchesQuery(UserProfile userProfile, HashSet<int> excludeUserIds)
