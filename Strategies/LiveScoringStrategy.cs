@@ -10,8 +10,14 @@ namespace MatchmakingService.Strategies;
 
 /// <summary>
 /// Real-time scoring strategy. Runs filter pipeline at DB level, then scores
-/// each candidate on-the-fly. Best for &lt;10K users where per-request
-/// scoring completes in &lt;200ms.
+/// each candidate on-the-fly. Best for under 10K users where per-request
+/// scoring completes in under 200ms.
+///
+/// T188: Integrates SwipeTrustScore shadow-restrict — candidates with low trust
+/// scores are demoted in ranking via: finalScore *= (0.5 + trustScore/200).
+/// At trust=100 (normal): multiplier=1.0 (no effect).
+/// At trust=50:  multiplier=0.75 (25% demotion).
+/// At trust=0:   multiplier=0.5  (50% demotion).
 /// </summary>
 public class LiveScoringStrategy : ICandidateStrategy
 {
@@ -84,6 +90,19 @@ public class LiveScoringStrategy : ICandidateStrategy
 
         var totalFiltered = filterResult.Candidates.Count;
 
+        // T188: Batch-fetch trust scores for all candidates upfront
+        var candidateUserIds = filterResult.Candidates.Select(c => c.UserId).ToList();
+        Dictionary<int, decimal> trustScores;
+        try
+        {
+            trustScores = await _swipeServiceClient.GetBatchTrustScoresAsync(candidateUserIds);
+        }
+        catch
+        {
+            // Graceful degradation: assume max trust for all if service is down
+            trustScores = candidateUserIds.ToDictionary(id => id, _ => 100m);
+        }
+
         // 4. Score each candidate
         var scoringConfig = _scoringConfig.CurrentValue;
         var minScore = request.MinScore > 0 ? request.MinScore : scoringConfig.MinimumCompatibilityThreshold;
@@ -105,6 +124,13 @@ public class LiveScoringStrategy : ICandidateStrategy
             // Final score = weighted blend of compatibility + activity + desirability
             var finalScore = (compatScore * 0.7) + (activityScore * 0.15) + (desirabilityScore * 0.15);
 
+            // T188: Shadow-restrict — apply trust score multiplier
+            // Formula: multiplier = 0.5 + (trustScore / 200)
+            // Trust 100 => 1.0 (no change), Trust 50 => 0.75, Trust 0 => 0.5
+            var candidateTrustScore = trustScores.GetValueOrDefault(candidate.UserId, 100m);
+            var trustMultiplier = 0.5 + ((double)candidateTrustScore / 200.0);
+            finalScore *= trustMultiplier;
+
             scored.Add(new ScoredCandidate(
                 Profile: candidate,
                 CompatibilityScore: Math.Round(compatScore, 1),
@@ -120,7 +146,7 @@ public class LiveScoringStrategy : ICandidateStrategy
 
         sw.Stop();
         _logger.LogInformation(
-            "LiveScoring for user {UserId}: {Filtered} filtered → {Scored} scored → {Returned} returned in {Ms}ms",
+            "LiveScoring for user {UserId}: {Filtered} filtered => {Scored} scored => {Returned} returned in {Ms}ms",
             userId, totalFiltered, scored.Count, limitedCandidates.Count, sw.ElapsedMilliseconds);
 
         return new CandidateResult(
