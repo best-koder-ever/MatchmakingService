@@ -80,6 +80,12 @@ namespace MatchmakingService.Data
                 .HasIndex(up => new { up.IsActive, up.DesirabilityScore })
                 .HasDatabaseName("IX_UserProfile_Desirability");
 
+            // T165: Composite index for active user search — covers the hot path
+            // (IsActive, Gender, Age, LastActiveAt) used by filter pipeline
+            modelBuilder.Entity<UserProfile>()
+                .HasIndex(up => new { up.IsActive, up.Gender, up.Age, up.LastActiveAt })
+                .HasDatabaseName("IX_UserProfile_ActiveSearch");
+
 
             // MatchScore entity configuration
             modelBuilder.Entity<MatchScore>()
