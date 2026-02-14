@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Net.Http;
 using MatchmakingService.Models;
 using MatchmakingService.Services;
+using MatchmakingService.Metrics;
 using MatchmakingService.Data;
 using MatchmakingService.DTOs;
 using Microsoft.AspNetCore.Authorization;
@@ -25,6 +26,7 @@ namespace MatchmakingService.Controllers
         private readonly ILogger<MatchmakingController> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _configuration;
+        private readonly MatchmakingServiceMetrics? _metrics;
 
         public MatchmakingController(
             IUserServiceClient userServiceClient,
@@ -35,7 +37,8 @@ namespace MatchmakingService.Controllers
             MatchmakingDbContext context,
             ILogger<MatchmakingController> logger,
             IHttpClientFactory httpClientFactory,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            MatchmakingServiceMetrics? metrics = null)
         {
             _userServiceClient = userServiceClient;
             _matchmakingService = matchmakingService;
@@ -46,6 +49,7 @@ namespace MatchmakingService.Controllers
             _logger = logger;
             _httpClientFactory = httpClientFactory;
             _configuration = configuration;
+            _metrics = metrics;
         }
 
         // POST: Handle mutual match notifications from SwipeService
@@ -71,6 +75,7 @@ namespace MatchmakingService.Controllers
 
                 _context.Matches.Add(match);
                 await _context.SaveChangesAsync();
+                _metrics?.MatchCreated();
 
                 // Send match notifications to both users
                 await _notificationService.NotifyMatchAsync(request.User1Id, request.User2Id, match.Id);
@@ -549,6 +554,7 @@ namespace MatchmakingService.Controllers
                 match.UnmatchedByUserId = userId;
 
                 await _context.SaveChangesAsync();
+                _metrics?.MatchCreated();
 
                 _logger.LogInformation($"Users {userId} and {targetUserId} unmatched");
 
@@ -598,6 +604,7 @@ namespace MatchmakingService.Controllers
                 match.UnmatchReason = request.Reason ?? "not_specified";
 
                 await _context.SaveChangesAsync();
+                _metrics?.MatchCreated();
 
                 var otherUserId = match.User1Id == request.UserId ? match.User2Id : match.User1Id;
 
@@ -757,6 +764,7 @@ namespace MatchmakingService.Controllers
                 var count = matches.Count;
                 _context.Matches.RemoveRange(matches);
                 await _context.SaveChangesAsync();
+                _metrics?.MatchCreated();
 
                 _logger.LogInformation("Deleted {Count} matches for user {UserProfileId}", count, userProfileId);
                 return Ok(count);

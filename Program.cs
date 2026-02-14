@@ -214,11 +214,9 @@ builder.Services.AddOpenTelemetry()
         }));
 
 // Create custom meters for business metrics
-System.Diagnostics.Metrics.Meter customMeter = new("MatchmakingService");
-var matchesCreatedCounter = customMeter.CreateCounter<long>("matches_created_total", description: "Total number of matches created");
-var candidatesEvaluatedCounter = customMeter.CreateCounter<long>("candidates_evaluated_total", description: "Total number of candidates evaluated for matching");
-var matchScoreHistogram = customMeter.CreateHistogram<double>("match_score_value", description: "Distribution of match compatibility scores");
-var matchAlgorithmDuration = customMeter.CreateHistogram<double>("match_algorithm_duration_ms", description: "Duration of match algorithm execution in milliseconds");
+
+// Register injectable business metrics
+builder.Services.AddSingleton<MatchmakingService.Metrics.MatchmakingServiceMetrics>();
 
 var app = builder.Build();
 
