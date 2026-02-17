@@ -157,9 +157,11 @@ builder.Services.AddScoped<MatchmakingService.Filters.CandidateFilterPipeline>()
 builder.Services.AddScoped<MatchmakingService.Strategies.LiveScoringStrategy>();
 builder.Services.AddScoped<MatchmakingService.Strategies.PreComputedStrategy>();
 builder.Services.AddScoped<MatchmakingService.Strategies.StrategyResolver>();
+builder.Services.AddScoped<MatchmakingService.Strategies.DailyPickStrategy>();
 
 // Phase 14.5: Background scoring service
 builder.Services.AddHostedService<MatchmakingService.Services.Background.ScoreRefreshBackgroundService>();
+builder.Services.AddHostedService<MatchmakingService.Services.Background.DailyPickGenerationService>();
 builder.Services.AddScoped<MatchmakingService.Services.DesirabilityCalculator>();
 
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>

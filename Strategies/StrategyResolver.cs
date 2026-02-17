@@ -43,6 +43,7 @@ public class StrategyResolver
                 "live" => _serviceProvider.GetRequiredService<LiveScoringStrategy>(),
                 "precomputed" => _serviceProvider.GetRequiredService<PreComputedStrategy>(),
                 "auto" => ResolveAuto(),
+                "dailypick" => _serviceProvider.GetRequiredService<DailyPickStrategy>(),
                 _ => FallbackToLive($"Unknown strategy '{name}'")
             };
         }
