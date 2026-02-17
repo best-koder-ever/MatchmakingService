@@ -23,8 +23,7 @@ namespace MatchmakingService.Data
             // Apply performance optimizations
             DbContextOptimizations.ApplyOptimizations(modelBuilder);
 
-            // Match entity configuration
-            // DailyPick entity configuration
+            // ─── DailyPick entity configuration (single, de-duplicated) ───
             modelBuilder.Entity<DailyPick>(entity =>
             {
                 entity.ToTable("daily_picks");
@@ -41,75 +40,28 @@ namespace MatchmakingService.Data
                 entity.HasOne(e => e.Candidate).WithMany().HasForeignKey(e => e.CandidateUserId).HasPrincipalKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
             });
 
+            // ─── Match entity configuration ───
             modelBuilder.Entity<Match>()
                 .HasIndex(m => m.User1Id)
                 .HasDatabaseName("IX_Match_User1Id");
 
-            // DailyPick entity configuration
-            modelBuilder.Entity<DailyPick>(entity =>
-            {
-                entity.ToTable("daily_picks");
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.UserId).IsRequired();
-                entity.Property(e => e.CandidateUserId).IsRequired();
-                entity.Property(e => e.Score);
-                entity.Property(e => e.Rank);
-                entity.Property(e => e.GeneratedAt).HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-                entity.Property(e => e.ExpiresAt).IsRequired();
-                entity.HasIndex(e => new { e.UserId, e.ExpiresAt }).HasDatabaseName("IX_DailyPick_UserExpiry");
-                entity.HasIndex(e => e.ExpiresAt).HasDatabaseName("IX_DailyPick_ExpiresAt");
-                entity.HasOne(e => e.User).WithMany().HasForeignKey(e => e.UserId).HasPrincipalKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
-                entity.HasOne(e => e.Candidate).WithMany().HasForeignKey(e => e.CandidateUserId).HasPrincipalKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
-            });
-
             modelBuilder.Entity<Match>()
                 .HasIndex(m => m.User2Id)
                 .HasDatabaseName("IX_Match_User2Id");
-
-            // DailyPick entity configuration
-            modelBuilder.Entity<DailyPick>(entity =>
-            {
-                entity.ToTable("daily_picks");
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.UserId).IsRequired();
-                entity.Property(e => e.CandidateUserId).IsRequired();
-                entity.Property(e => e.Score);
-                entity.Property(e => e.Rank);
-                entity.Property(e => e.GeneratedAt).HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-                entity.Property(e => e.ExpiresAt).IsRequired();
-                entity.HasIndex(e => new { e.UserId, e.ExpiresAt }).HasDatabaseName("IX_DailyPick_UserExpiry");
-                entity.HasIndex(e => e.ExpiresAt).HasDatabaseName("IX_DailyPick_ExpiresAt");
-                entity.HasOne(e => e.User).WithMany().HasForeignKey(e => e.UserId).HasPrincipalKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
-                entity.HasOne(e => e.Candidate).WithMany().HasForeignKey(e => e.CandidateUserId).HasPrincipalKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
-            });
 
             modelBuilder.Entity<Match>()
                 .HasIndex(m => new { m.User1Id, m.User2Id })
                 .IsUnique()
                 .HasDatabaseName("IX_Match_User1Id_User2Id");
 
-            // DailyPick entity configuration
-            modelBuilder.Entity<DailyPick>(entity =>
-            {
-                entity.ToTable("daily_picks");
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.UserId).IsRequired();
-                entity.Property(e => e.CandidateUserId).IsRequired();
-                entity.Property(e => e.Score);
-                entity.Property(e => e.Rank);
-                entity.Property(e => e.GeneratedAt).HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-                entity.Property(e => e.ExpiresAt).IsRequired();
-                entity.HasIndex(e => new { e.UserId, e.ExpiresAt }).HasDatabaseName("IX_DailyPick_UserExpiry");
-                entity.HasIndex(e => e.ExpiresAt).HasDatabaseName("IX_DailyPick_ExpiresAt");
-                entity.HasOne(e => e.User).WithMany().HasForeignKey(e => e.UserId).HasPrincipalKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
-                entity.HasOne(e => e.Candidate).WithMany().HasForeignKey(e => e.CandidateUserId).HasPrincipalKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
-            });
-
             modelBuilder.Entity<Match>()
                 .HasIndex(m => m.CreatedAt)
                 .HasDatabaseName("IX_Match_CreatedAt");
 
-            // UserProfile entity configuration
+            modelBuilder.Entity<Match>()
+                .ToTable(t => t.HasCheckConstraint("CK_Match_UserOrder", "User1Id < User2Id"));
+
+            // ─── UserProfile entity configuration ───
             modelBuilder.Entity<UserProfile>()
                 .HasIndex(up => up.UserId)
                 .IsUnique()
@@ -155,8 +107,7 @@ namespace MatchmakingService.Data
                 .HasIndex(up => new { up.IsActive, up.Gender, up.Age, up.LastActiveAt })
                 .HasDatabaseName("IX_UserProfile_ActiveSearch");
 
-
-            // MatchScore entity configuration
+            // ─── MatchScore entity configuration ───
             modelBuilder.Entity<MatchScore>()
                 .HasIndex(ms => ms.UserId)
                 .HasDatabaseName("IX_MatchScore_UserId");
@@ -174,7 +125,7 @@ namespace MatchmakingService.Data
                 .HasIndex(ms => ms.CalculatedAt)
                 .HasDatabaseName("IX_MatchScore_CalculatedAt");
 
-            // MatchPreference entity configuration
+            // ─── MatchPreference entity configuration ───
             modelBuilder.Entity<MatchPreference>()
                 .HasIndex(mp => mp.UserId)
                 .HasDatabaseName("IX_MatchPreference_UserId");
@@ -184,7 +135,7 @@ namespace MatchmakingService.Data
                 .IsUnique()
                 .HasDatabaseName("IX_MatchPreference_UserId_Type");
 
-            // MatchingAlgorithmMetric entity configuration
+            // ─── MatchingAlgorithmMetric entity configuration ───
             modelBuilder.Entity<MatchingAlgorithmMetric>()
                 .HasIndex(mam => mam.UserId)
                 .HasDatabaseName("IX_MatchingAlgorithmMetric_UserId");
@@ -192,27 +143,6 @@ namespace MatchmakingService.Data
             modelBuilder.Entity<MatchingAlgorithmMetric>()
                 .HasIndex(mam => mam.CalculatedAt)
                 .HasDatabaseName("IX_MatchingAlgorithmMetric_CalculatedAt");
-
-            // Ensure proper ordering for matches (smaller userId first)
-            // DailyPick entity configuration
-            modelBuilder.Entity<DailyPick>(entity =>
-            {
-                entity.ToTable("daily_picks");
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.UserId).IsRequired();
-                entity.Property(e => e.CandidateUserId).IsRequired();
-                entity.Property(e => e.Score);
-                entity.Property(e => e.Rank);
-                entity.Property(e => e.GeneratedAt).HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-                entity.Property(e => e.ExpiresAt).IsRequired();
-                entity.HasIndex(e => new { e.UserId, e.ExpiresAt }).HasDatabaseName("IX_DailyPick_UserExpiry");
-                entity.HasIndex(e => e.ExpiresAt).HasDatabaseName("IX_DailyPick_ExpiresAt");
-                entity.HasOne(e => e.User).WithMany().HasForeignKey(e => e.UserId).HasPrincipalKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
-                entity.HasOne(e => e.Candidate).WithMany().HasForeignKey(e => e.CandidateUserId).HasPrincipalKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
-            });
-
-            modelBuilder.Entity<Match>()
-                .ToTable(t => t.HasCheckConstraint("CK_Match_UserOrder", "User1Id < User2Id"));
         }
     }
 }
