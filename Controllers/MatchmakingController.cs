@@ -700,31 +700,6 @@ namespace MatchmakingService.Controllers
             }
         }
 
-        [HttpGet("health")]
-        public IActionResult HealthCheck()
-        {
-            try
-            {
-                var dbConnected = _context.Database.CanConnect();
-                return Ok(new
-                {
-                    Status = "Healthy",
-                    Timestamp = DateTime.UtcNow,
-                    DatabaseConnected = dbConnected,
-                    Service = "MatchmakingService v1.0"
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Health check failed");
-                return StatusCode(500, new
-                {
-                    Status = "Unhealthy",
-                    Error = ex.Message
-                });
-            }
-        }
-
         [HttpGet("userprofile/{userId}")]
         public async Task<IActionResult> GetUserProfile(int userId)
         {
