@@ -4,7 +4,6 @@ using MatchmakingService.Extensions;
 using MatchmakingService.Services;
 using MatchmakingService.Common;
 using MatchmakingService.Filters;
-using MatchmakingService.Common;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
