@@ -33,11 +33,6 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageReference Include="Serilog.Sinks.Grafana.Loki" Version="8.3.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
-    <PackageReference Include="xunit" Version="2.8.1" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.13" />
     <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
     <PackageReference Include="Serilog.Settings.Configuration" Version="8.0.0" />
@@ -45,11 +40,10 @@
   </ItemGroup>
 
   <ItemGroup>
-  </ItemGroup>
-
-  <ItemGroup>
     <Compile Remove="MatchmakingService.Tests/**/*.cs" />
     <Content Remove="MatchmakingService.Tests/**/*" />
+    <EmbeddedResource Remove="MatchmakingService.Tests/**/*" />
+    <None Remove="MatchmakingService.Tests/**/*" />
   </ItemGroup>
 
 </Project>
