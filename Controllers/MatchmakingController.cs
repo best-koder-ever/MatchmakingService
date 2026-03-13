@@ -58,6 +58,25 @@ namespace MatchmakingService.Controllers
         {
             try
             {
+                var user1 = Math.Min(request.User1Id, request.User2Id);
+                var user2 = Math.Max(request.User1Id, request.User2Id);
+
+                // Check if match already exists (idempotent — safe for retries and repeated test runs)
+                var existing = await _context.Matches
+                    .FirstOrDefaultAsync(m => m.User1Id == user1 && m.User2Id == user2);
+
+                if (existing != null)
+                {
+                    _logger.LogInformation("Match already exists between users {User1} and {User2} (ID {MatchId}), returning existing",
+                        user1, user2, existing.Id);
+                    return Ok(new
+                    {
+                        Message = "Match already exists",
+                        MatchId = existing.Id,
+                        CompatibilityScore = Math.Round(existing.CompatibilityScore, 1)
+                    });
+                }
+
                 // Calculate compatibility score if not provided
                 var compatibilityScore = request.CompatibilityScore ??
                     await _advancedMatchingService.CalculateCompatibilityScoreAsync(request.User1Id, request.User2Id);
@@ -65,8 +84,8 @@ namespace MatchmakingService.Controllers
                 // Save the match with enhanced details
                 var match = new Match
                 {
-                    User1Id = Math.Min(request.User1Id, request.User2Id),
-                    User2Id = Math.Max(request.User1Id, request.User2Id),
+                    User1Id = user1,
+                    User2Id = user2,
                     CreatedAt = DateTime.UtcNow,
                     CompatibilityScore = compatibilityScore,
                     MatchSource = request.Source,

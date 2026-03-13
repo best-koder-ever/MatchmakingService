@@ -144,6 +144,7 @@ builder.Services.AddScoped<InternalApiKeyAuthFilter>();
 builder.Services.AddTransient<InternalApiKeyAuthHandler>();
 // T168/T169: Candidate filter pipeline
 builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.SelfExclusionFilter>();
+builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.ExcludeBotFilter>();       // Order 5
 builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.ActiveUserFilter>();
 builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.GenderFilter>();
 builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.AgeRangeFilter>();

@@ -50,5 +50,8 @@ namespace MatchmakingService.Models
         public bool IsVerified { get; set; } = false;
         public double DesirabilityScore { get; set; } = 50.0; // ELO-inspired 0-100
 
+        /// <summary>True if this profile belongs to a bot account</summary>
+        public bool IsBot { get; set; } = false;
+
     }
 }
