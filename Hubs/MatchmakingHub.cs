@@ -18,7 +18,17 @@ public class MatchmakingHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        // Debug: log all claims
+        var claims = Context.User?.Claims?.ToList() ?? new List<Claim>();
+        _logger.LogWarning("Hub connect: authenticated={IsAuth}, claims count={Count}", 
+            Context.User?.Identity?.IsAuthenticated ?? false, claims.Count);
+        foreach (var c in claims.Take(10))
+        {
+            _logger.LogWarning("  Claim: {Type} = {Value}", c.Type, c.Value);
+        }
+
+        var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? Context.User?.FindFirst("sub")?.Value;
 
         if (string.IsNullOrEmpty(userId))
         {
@@ -37,7 +47,8 @@ public class MatchmakingHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? Context.User?.FindFirst("sub")?.Value;
 
         if (!string.IsNullOrEmpty(userId))
         {
@@ -58,7 +69,8 @@ public class MatchmakingHub : Hub
     /// </summary>
     public async Task Subscribe()
     {
-        var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? Context.User?.FindFirst("sub")?.Value;
 
         if (string.IsNullOrEmpty(userId))
         {

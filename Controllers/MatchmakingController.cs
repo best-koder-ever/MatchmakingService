@@ -78,8 +78,23 @@ namespace MatchmakingService.Controllers
                 }
 
                 // Calculate compatibility score if not provided
-                var compatibilityScore = request.CompatibilityScore ??
-                    await _advancedMatchingService.CalculateCompatibilityScoreAsync(request.User1Id, request.User2Id);
+                double compatibilityScore;
+                if (request.CompatibilityScore.HasValue)
+                {
+                    compatibilityScore = request.CompatibilityScore.Value;
+                }
+                else
+                {
+                    try
+                    {
+                        compatibilityScore = await _advancedMatchingService.CalculateCompatibilityScoreAsync(request.User1Id, request.User2Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to calculate compatibility score for {U1}↔{U2}, using default", request.User1Id, request.User2Id);
+                        compatibilityScore = 50.0;
+                    }
+                }
 
                 // Save the match with enhanced details
                 var match = new Match
@@ -424,6 +439,73 @@ namespace MatchmakingService.Controllers
 
                 _logger.LogInformation("Returning {Count} matches for user {UserId} (profile {ProfileId})",
                     matches.Count, userId, profileId);
+
+                // Fallback to SwipeService when local Matches table is empty
+                if (matches.Count == 0)
+                {
+                    _logger.LogWarning("No matches in local DB for user {UserId}, trying SwipeService fallback", userId);
+                    try
+                    {
+                        var swipeServiceUrl = _configuration["Services:SwipeService:BaseUrl"]
+                            ?? "http://localhost:8087";
+                        var client = _httpClientFactory.CreateClient();
+                        var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+                        if (!string.IsNullOrEmpty(authHeader))
+                            client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", authHeader);
+
+                        var swipeResp = await client.GetAsync($"{swipeServiceUrl}/api/Swipes/matches/{profileId}");
+                        if (swipeResp.IsSuccessStatusCode)
+                        {
+                            var swipeContent = await swipeResp.Content.ReadAsStringAsync();
+                            using var swipeDoc = System.Text.Json.JsonDocument.Parse(swipeContent);
+
+                            // SwipeService returns {success:true, data:[...]}
+                            System.Text.Json.JsonElement matchArray;
+                            if (swipeDoc.RootElement.TryGetProperty("data", out var dataElem) &&
+                                dataElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                            {
+                                matchArray = dataElem;
+                            }
+                            else if (swipeDoc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+                            {
+                                matchArray = swipeDoc.RootElement;
+                            }
+                            else
+                            {
+                                _logger.LogWarning("Unexpected SwipeService response format");
+                                return Ok(new List<object>());
+                            }
+
+                            var swipeMatches = new List<object>();
+                            foreach (var item in matchArray.EnumerateArray())
+                            {
+                                swipeMatches.Add(new
+                                {
+                                    matchId = item.TryGetProperty("id", out var sid) ? sid.GetInt32() : 0,
+                                    matchedUserId = item.TryGetProperty("matchedUserId", out var mid) ? mid.GetInt32() : 0,
+                                    matchedAt = item.TryGetProperty("matchedAt", out var mat) ? mat.GetString() : null,
+                                    compatibilityScore = (double?)null,
+                                    isActive = item.TryGetProperty("isActive", out var ia) && ia.GetBoolean(),
+                                    matchSource = "SwipeService",
+                                    lastMessageAt = (string?)null,
+                                    lastMessageByUserId = (int?)null
+                                });
+                            }
+                            _logger.LogInformation("SwipeService fallback returned {Count} matches for user {UserId}",
+                                swipeMatches.Count, userId);
+                            return Ok(swipeMatches);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("SwipeService returned {StatusCode} for matches of user {UserId}",
+                                (int)swipeResp.StatusCode, userId);
+                        }
+                    }
+                    catch (Exception swipeEx)
+                    {
+                        _logger.LogError(swipeEx, "SwipeService fallback failed for user {UserId}", userId);
+                    }
+                }
 
                 // Return as flat JSON array (Flutter expects List<dynamic>)
                 return Ok(matches);
