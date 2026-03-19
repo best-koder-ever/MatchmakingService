@@ -54,7 +54,32 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
         });
 });
 
-builder.Services.AddKeycloakAuthentication(builder.Configuration);
+builder.Services.AddKeycloakAuthentication(builder.Configuration, options =>
+{
+    options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            var isWs = context.HttpContext.WebSockets.IsWebSocketRequest;
+            Console.WriteLine($"[DEBUG-OMR] OnMessageReceived FIRED: path={path}, isWs={isWs}, hasToken={!string.IsNullOrEmpty(accessToken)}, queryKeys=[{string.Join(",", context.Request.Query.Keys)}]");
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/matchmaking"))
+            {
+                context.Token = accessToken;
+                Console.WriteLine($"[DEBUG-OMR] Token SET for /hubs/matchmaking, tokenLen={accessToken.ToString().Length}");
+            }
+            return Task.CompletedTask;
+        },
+        OnAuthenticationFailed = context =>
+        {
+            Console.WriteLine($"[DEBUG-AUTH-FAIL] Auth FAILED: {context.Exception.GetType().Name}: {context.Exception.Message}");
+            if (context.Exception.InnerException != null)
+                Console.WriteLine($"[DEBUG-AUTH-FAIL] Inner: {context.Exception.InnerException.Message}");
+            return Task.CompletedTask;
+        }
+    };
+});
 builder.Services.AddAuthorization();
 
 builder.Services.AddSignalR();
@@ -237,7 +262,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment()) { app.UseHttpsRedirection(); }
 
 app.UseCorrelationIds();
 app.UseAuthentication();

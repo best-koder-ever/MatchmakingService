@@ -73,6 +73,14 @@ namespace MatchmakingService.Controllers
                     response.Count, userId, result.StrategyUsed,
                     result.ExecutionTime.TotalMilliseconds);
 
+                // If strategy returns empty (e.g. no profiles synced to matchmaking DB),
+                // fall back to legacy UserService demo search
+                if (response.Count == 0)
+                {
+                    _logger.LogWarning("Strategy returned 0 candidates for user {UserId}, trying legacy fallback", userId);
+                    return await GetProfilesLegacy(userId);
+                }
+
                 return Ok(response);
             }
             catch (Exception ex)

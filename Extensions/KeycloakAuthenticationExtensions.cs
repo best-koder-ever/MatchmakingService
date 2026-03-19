@@ -9,7 +9,10 @@ namespace MatchmakingService.Extensions
 {
     public static class KeycloakAuthenticationExtensions
     {
-        public static IServiceCollection AddKeycloakAuthentication(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection AddKeycloakAuthentication(
+            this IServiceCollection services, 
+            IConfiguration configuration,
+            Action<JwtBearerOptions>? configureOptions = null)
         {
             var keycloakSection = configuration.GetSection("Authentication:Keycloak");
             if (!keycloakSection.Exists())
@@ -35,10 +38,11 @@ namespace MatchmakingService.Extensions
             {
                 options.Authority = authority;
                 options.RequireHttpsMetadata = requireHttpsMetadata;
+                var validIssuers = BuildValidIssuersList(keycloakSection, authority);
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
-                    ValidIssuer = authority,
+                    ValidIssuers = validIssuers,
                     ValidateAudience = audiences.Count > 0,
                     ValidAudiences = audiences,
                     ValidateIssuerSigningKey = true,
@@ -46,9 +50,26 @@ namespace MatchmakingService.Extensions
                     NameClaimType = "preferred_username",
                     RoleClaimType = "roles"
                 };
+                
+                // Apply any additional configuration (e.g., OnMessageReceived for SignalR)
+                configureOptions?.Invoke(options);
             });
 
             return services;
+        }
+
+        private static List<string> BuildValidIssuersList(IConfigurationSection keycloakSection, string authority)
+        {
+            var issuers = new List<string> { authority };
+            var configuredIssuers = keycloakSection.GetSection("ValidIssuers").Get<string[]>() ?? Array.Empty<string>();
+            foreach (var issuer in configuredIssuers)
+            {
+                if (!string.IsNullOrWhiteSpace(issuer) && !issuers.Contains(issuer))
+                {
+                    issuers.Add(issuer);
+                }
+            }
+            return issuers;
         }
 
         private static List<string> BuildAudienceList(IConfigurationSection keycloakSection)
