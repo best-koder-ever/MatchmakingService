@@ -245,14 +245,25 @@ builder.Services.AddOpenTelemetry()
 // Register injectable business metrics
 builder.Services.AddSingleton<MatchmakingService.Metrics.MatchmakingServiceMetrics>();
 
-// Add CORS for Flutter web development
+// CORS: config-driven origins — AllowAnyOrigin in dev, restricted in staging/production
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        if (allowedOrigins != null && allowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
     });
 });
 

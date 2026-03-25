@@ -131,6 +131,13 @@ public class LiveScoringStrategy : ICandidateStrategy
             var trustMultiplier = 0.5 + ((double)candidateTrustScore / 200.0);
             finalScore *= trustMultiplier;
 
+            // Flavor preference: boost same-flavor candidates by 10%
+            if (!string.IsNullOrEmpty(user.FlavorId) && 
+                string.Equals(user.FlavorId, candidate.FlavorId, StringComparison.OrdinalIgnoreCase))
+            {
+                finalScore = Math.Min(100, finalScore * 1.10);
+            }
+
             scored.Add(new ScoredCandidate(
                 Profile: candidate,
                 CompatibilityScore: Math.Round(compatScore, 1),

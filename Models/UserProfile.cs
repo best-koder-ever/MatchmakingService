@@ -53,5 +53,8 @@ namespace MatchmakingService.Models
         /// <summary>True if this profile belongs to a bot account</summary>
         public bool IsBot { get; set; } = false;
 
+        /// <summary>App flavor this user signed up through (hinge, fleet)</summary>
+        public string FlavorId { get; set; } = "hinge";
+
     }
 }

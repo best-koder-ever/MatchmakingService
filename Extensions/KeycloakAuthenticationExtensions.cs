@@ -47,6 +47,7 @@ namespace MatchmakingService.Extensions
                     ValidAudiences = audiences,
                     ValidateIssuerSigningKey = true,
                     ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero,
                     NameClaimType = "preferred_username",
                     RoleClaimType = "roles"
                 };
