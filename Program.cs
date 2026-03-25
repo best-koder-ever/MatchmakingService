@@ -245,6 +245,17 @@ builder.Services.AddOpenTelemetry()
 // Register injectable business metrics
 builder.Services.AddSingleton<MatchmakingService.Metrics.MatchmakingServiceMetrics>();
 
+// Add CORS for Flutter web development
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -265,6 +276,7 @@ if (app.Environment.IsDevelopment())
 if (!app.Environment.IsDevelopment()) { app.UseHttpsRedirection(); }
 
 app.UseCorrelationIds();
+app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 
