@@ -54,7 +54,7 @@ namespace MatchmakingService.Models
         public bool IsBot { get; set; } = false;
 
         /// <summary>App flavor this user signed up through (hinge, fleet)</summary>
-        public string FlavorId { get; set; } = "hinge";
+        public string FlavorId { get; set; } = "dejting";
 
     }
 }
