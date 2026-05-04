@@ -15,6 +15,8 @@ namespace MatchmakingService.Data
         public DbSet<MatchPreference> MatchPreferences { get; set; }
         public DbSet<MatchingAlgorithmMetric> MatchingAlgorithmMetrics { get; set; }
         public DbSet<DailyPick> DailyPicks { get; set; }
+        public DbSet<CompatibilityQuestion> CompatibilityQuestions { get; set; }
+        public DbSet<CompatibilityAnswer> CompatibilityAnswers { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
