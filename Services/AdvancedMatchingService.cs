@@ -25,6 +25,7 @@ namespace MatchmakingService.Services
         private readonly IOptionsMonitor<ScoringConfiguration> _scoringConfig;
         private readonly ILogger<AdvancedMatchingService> _logger;
         private readonly IDailySuggestionTracker _suggestionTracker;
+        private readonly ICompatibilityScorer _compatibilityScorer;
 
         public AdvancedMatchingService(
             MatchmakingDbContext context,
@@ -33,7 +34,8 @@ namespace MatchmakingService.Services
             ISwipeServiceClient swipeServiceClient,
             IOptionsMonitor<ScoringConfiguration> scoringConfig,
             ILogger<AdvancedMatchingService> logger,
-            IDailySuggestionTracker suggestionTracker)
+            IDailySuggestionTracker suggestionTracker,
+            ICompatibilityScorer compatibilityScorer)
         {
             _context = context;
             _userServiceClient = userServiceClient;
@@ -42,6 +44,7 @@ namespace MatchmakingService.Services
             _scoringConfig = scoringConfig;
             _logger = logger;
             _suggestionTracker = suggestionTracker;
+            _compatibilityScorer = compatibilityScorer;
         }
 
         public async Task<List<MatchSuggestionResponse>> FindMatchesAsync(FindMatchesRequest request)
@@ -169,7 +172,27 @@ namespace MatchmakingService.Services
                              userProfile.InterestsWeight + userProfile.EducationWeight +
                              userProfile.LifestyleWeight + activityWeight;
 
-            var overallScore = Math.Min(100, weightedScore / totalWeight);
+            var baseScore = Math.Min(100, weightedScore / totalWeight);
+
+            // Blend with compatibility questionnaire score (30 % weight by default).
+            // Falls back to neutral (0.5 → 50/100) if the scorer is unavailable or
+            // either user has no questionnaire answers.
+            double compatRaw;
+            try
+            {
+                compatRaw = await _compatibilityScorer.GetScoreAsync(userId, targetUserId);
+                compatRaw = Math.Clamp(compatRaw, 0.0, 1.0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "CompatibilityScorer failed for users {UserId}/{TargetUserId}; using neutral score",
+                    userId, targetUserId);
+                compatRaw = 0.5;
+            }
+
+            var compatibilityWeight = config.CompatibilityWeight;
+            var overallScore = baseScore * (1.0 - compatibilityWeight) + (compatRaw * 100.0) * compatibilityWeight;
 
             // Cache the score
             await CacheMatchScore(userId, targetUserId, overallScore, locationScore, ageScore,

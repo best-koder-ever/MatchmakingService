@@ -25,6 +25,7 @@ public class AdvancedMatchingServiceTests : IDisposable
     private readonly Mock<IDailySuggestionTracker> _mockDailySuggestionTracker;
     private readonly Mock<ISwipeServiceClient> _mockSwipeServiceClient;
     private readonly Mock<IOptionsMonitor<ScoringConfiguration>> _mockScoringConfig;
+    private readonly Mock<ICompatibilityScorer> _mockCompatibilityScorer;
     private readonly AdvancedMatchingService _service;
 
     public AdvancedMatchingServiceTests()
@@ -41,6 +42,11 @@ public class AdvancedMatchingServiceTests : IDisposable
         _mockSwipeServiceClient = new Mock<ISwipeServiceClient>();
         _mockScoringConfig = new Mock<IOptionsMonitor<ScoringConfiguration>>();
         _mockScoringConfig.Setup(x => x.CurrentValue).Returns(new ScoringConfiguration());
+        _mockCompatibilityScorer = new Mock<ICompatibilityScorer>();
+        // Default: neutral score (0.5) — simulates users with no questionnaire answers
+        _mockCompatibilityScorer
+            .Setup(x => x.GetScoreAsync(It.IsAny<int>(), It.IsAny<int>()))
+            .ReturnsAsync(0.5);
         _service = new AdvancedMatchingService(
             _context, 
             _mockUserServiceClient.Object, 
@@ -48,7 +54,8 @@ public class AdvancedMatchingServiceTests : IDisposable
             _mockSwipeServiceClient.Object,
             _mockScoringConfig.Object,
             _mockLogger.Object,
-            _mockDailySuggestionTracker.Object
+            _mockDailySuggestionTracker.Object,
+            _mockCompatibilityScorer.Object
         );
     }
 
@@ -74,7 +81,7 @@ public class AdvancedMatchingServiceTests : IDisposable
         var score = await _service.CalculateCompatibilityScoreAsync(1, 2);
 
         // Assert - Nearby users should get high score (90+ out of 100)
-        Assert.True(score >= 80, $"Expected score >= 80 for nearby users, got {score}");
+        Assert.True(score >= 60, $"Expected score >= 60 for nearby users, got {score}");
     }
 
     [Fact]
@@ -127,7 +134,7 @@ public class AdvancedMatchingServiceTests : IDisposable
         var score = await _service.CalculateCompatibilityScoreAsync(1, 2);
 
         // Assert - Ideal age should score high
-        Assert.True(score >= 83, $"Expected score >= 83 for ideal age, got {score}");
+        Assert.True(score >= 70, $"Expected score >= 70 for ideal age, got {score}");
     }
 
     [Fact]
@@ -235,8 +242,8 @@ public class AdvancedMatchingServiceTests : IDisposable
         var score2 = await _service.CalculateCompatibilityScoreAsync(1, 2);
 
         // Assert - Same preference should score higher than neutral
-        Assert.True(score1 >= 75, $"Expected score >= 75 for same children preference, got {score1}");
-        Assert.True(score2 >= 75, $"Expected score >= 75 for same children preference, got {score2}");
+        Assert.True(score1 >= 70, $"Expected score >= 70 for same children preference, got {score1}");
+        Assert.True(score2 >= 70, $"Expected score >= 70 for same children preference, got {score2}");
     }
 
     [Fact]
@@ -278,7 +285,7 @@ public class AdvancedMatchingServiceTests : IDisposable
         var score = await _service.CalculateCompatibilityScoreAsync(1, 2);
 
         // Assert - Similar lifestyle should give good score
-        Assert.True(score >= 80, $"Expected score >= 80 for similar lifestyle, got {score}");
+        Assert.True(score >= 70, $"Expected score >= 70 for similar lifestyle, got {score}");
     }
 
     // ==================== QUEUE ORDERING TESTS ====================
@@ -329,8 +336,8 @@ public class AdvancedMatchingServiceTests : IDisposable
 
         // High compatibility user should be first
         Assert.Equal(2, matches[0].TargetUserId);
-        Assert.True(matches[0].CompatibilityScore > 85, 
-            $"Expected high compatibility score > 85, got {matches[0].CompatibilityScore}");
+        Assert.True(matches[0].CompatibilityScore > 70, 
+            $"Expected high compatibility score > 70, got {matches[0].CompatibilityScore}");
     }
 
     [Fact]
@@ -494,5 +501,117 @@ public class AdvancedMatchingServiceTests : IDisposable
             WantsChildren = false,
             HasChildren = false
         };
+    }
+
+    // ==================== T530: COMPATIBILITY SCORE INTEGRATION TESTS ====================
+
+    [Fact]
+    public async Task ScoreCandidate_BothUsersAnswered_CompatibilityReflectedInScore()
+    {
+        // Arrange — both users have questionnaire answers (scorer returns high value)
+        var user   = CreateUserProfile(10, "Male",   28, 37.7749, -122.4194, "Female", 25, 35, 50);
+        var target = CreateUserProfile(11, "Female", 30, 37.7749, -122.4194, "Male",   25, 35, 50);
+
+        await _context.UserProfiles.AddRangeAsync(user, target);
+        await _context.SaveChangesAsync();
+
+        // Mock: high compatibility (0.9 → 90/100)
+        _mockCompatibilityScorer
+            .Setup(x => x.GetScoreAsync(10, 11))
+            .ReturnsAsync(0.9);
+
+        // Act
+        var scoreHigh = await _service.CalculateCompatibilityScoreAsync(10, 11);
+
+        // Reset cache so we can compare with neutral
+        var cached = _context.MatchScores.Where(ms => ms.UserId == 10 && ms.TargetUserId == 11);
+        _context.MatchScores.RemoveRange(cached);
+        await _context.SaveChangesAsync();
+
+        // Mock: neutral compatibility (0.5 → 50/100)
+        _mockCompatibilityScorer
+            .Setup(x => x.GetScoreAsync(10, 11))
+            .ReturnsAsync(0.5);
+
+        var scoreNeutral = await _service.CalculateCompatibilityScoreAsync(10, 11);
+
+        // Assert — high compatibility should yield a higher score than neutral
+        Assert.True(scoreHigh > scoreNeutral,
+            $"Expected high-compat score ({scoreHigh}) > neutral score ({scoreNeutral})");
+    }
+
+    [Fact]
+    public async Task ScoreCandidate_OneUserNoAnswers_UsesNeutralFallback()
+    {
+        // Arrange — scorer signals "no answers" by returning 0.5 (neutral)
+        var user   = CreateUserProfile(20, "Male",   28, 37.7749, -122.4194, "Female", 25, 35, 50);
+        var target = CreateUserProfile(21, "Female", 30, 37.7749, -122.4194, "Male",   25, 35, 50);
+
+        await _context.UserProfiles.AddRangeAsync(user, target);
+        await _context.SaveChangesAsync();
+
+        _mockCompatibilityScorer
+            .Setup(x => x.GetScoreAsync(20, 21))
+            .ReturnsAsync(0.5); // neutral — one user has no answers
+
+        // Act — must not throw
+        var score = await _service.CalculateCompatibilityScoreAsync(20, 21);
+
+        // Assert — score is valid and within [0, 100]
+        Assert.True(score >= 0 && score <= 100,
+            $"Score should be in [0, 100], got {score}");
+    }
+
+    [Fact]
+    public async Task ScoreCandidate_BothUsersNoAnswers_UsesNeutralFallback()
+    {
+        // Arrange — both users have no questionnaire answers (scorer returns neutral)
+        var user   = CreateUserProfile(30, "Male",   28, 37.7749, -122.4194, "Female", 25, 35, 50);
+        var target = CreateUserProfile(31, "Female", 30, 37.7749, -122.4194, "Male",   25, 35, 50);
+
+        await _context.UserProfiles.AddRangeAsync(user, target);
+        await _context.SaveChangesAsync();
+
+        _mockCompatibilityScorer
+            .Setup(x => x.GetScoreAsync(30, 31))
+            .ReturnsAsync(0.5); // both have no answers → neutral
+
+        // Act — must not throw
+        var score = await _service.CalculateCompatibilityScoreAsync(30, 31);
+
+        // Assert — score is valid and within [0, 100]
+        Assert.True(score >= 0 && score <= 100,
+            $"Score should be in [0, 100], got {score}");
+    }
+
+    [Fact]
+    public async Task ScoreCandidate_WeightsCorrectlySumToOne()
+    {
+        // Arrange — identical profiles with all components set to match perfectly
+        var user   = CreateUserProfile(40, "Male",   30, 37.7749, -122.4194, "Female", 28, 32, 50);
+        var target = CreateUserProfile(41, "Female", 30, 37.7749, -122.4194, "Male",   28, 32, 50);
+        user.WantsChildren   = true;
+        target.WantsChildren = true;
+        // Matching interests and education so those components also score 100
+        user.Interests   = JsonSerializer.Serialize(new[] { "hiking", "travel" });
+        target.Interests = JsonSerializer.Serialize(new[] { "hiking", "travel" });
+        user.Education   = "Bachelor's";
+        target.Education = "Bachelor's";
+
+        await _context.UserProfiles.AddRangeAsync(user, target);
+        await _context.SaveChangesAsync();
+
+        // Compatibility also perfect (1.0 → 100/100)
+        _mockCompatibilityScorer
+            .Setup(x => x.GetScoreAsync(40, 41))
+            .ReturnsAsync(1.0);
+
+        // Act
+        var score = await _service.CalculateCompatibilityScoreAsync(40, 41);
+
+        // Assert — with all components at maximum, the blended score must be ~100
+        // (verifies that (1 - w) * 100 + w * 100 = 100; weights sum to 1.0)
+        Assert.True(score >= 99,
+            $"Expected score ≈ 100 when all components are perfect, got {score}");
     }
 }

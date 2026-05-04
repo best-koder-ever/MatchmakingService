@@ -104,5 +104,13 @@ namespace MatchmakingService.Models
         /// Recommendation: 7 - Weekly active users get good scores
         /// </summary>
         public double ActivityScoreHalfLifeDays { get; set; } = 7.0;
+
+        /// <summary>
+        /// Fractional weight applied to the compatibility-questionnaire score component (0.0–1.0).
+        /// The remaining (1 - CompatibilityWeight) is applied to the existing scoring components
+        /// so that all weights sum to 1.0 in the final blended score.
+        /// Recommendation: 0.3 — 30 % contribution from the compatibility questionnaire
+        /// </summary>
+        public double CompatibilityWeight { get; set; } = 0.3;
     }
 }

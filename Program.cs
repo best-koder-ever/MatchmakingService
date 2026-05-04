@@ -134,6 +134,7 @@ builder.Services.AddScoped<MatchmakingService.Services.MatchmakingService>();
 builder.Services.AddScoped<IAdvancedMatchingService, AdvancedMatchingService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IHealthMetricsService, HealthMetricsService>();
+builder.Services.AddScoped<ICompatibilityScorer, CompatibilityScorer>();
 builder.Services.AddHttpClient();
 
 // Register scoring configuration with hot-reload support
