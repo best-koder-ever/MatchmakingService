@@ -9,10 +9,14 @@ namespace MatchmakingService.Services
         /// <inheritdoc/>
         public Task<double> GetScoreAsync(int userId1, int userId2)
         {
+            // Normalise ordering so GetScoreAsync(a, b) == GetScoreAsync(b, a).
+            var lo = Math.Min(userId1, userId2);
+            var hi = Math.Max(userId1, userId2);
+
             // Deterministic pseudo-score derived from the pair's ID hash (MVP implementation).
             // When real questionnaire data is available this will be replaced with a
             // weighted cosine-similarity over answer vectors; the interface contract is unchanged.
-            var hash = Math.Abs((userId1.ToString() + userId2.ToString()).GetHashCode());
+            var hash = Math.Abs((lo.ToString() + hi.ToString()).GetHashCode());
             var interests  = (hash % 40) + 30;   // 30–69
             var location   = (hash % 30) + 40;   // 40–69
             var preference = (hash % 50) + 25;   // 25–74
