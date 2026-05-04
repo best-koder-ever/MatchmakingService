@@ -8,10 +8,15 @@ on:
 
 jobs:
   test-and-build:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
     - name: 📥 Checkout code
       uses: actions/checkout@v4
+
+    - name: 🛠️ Setup .NET 8
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
 
     - name: 📦 Restore dependencies
       run: dotnet restore MatchmakingService.sln
@@ -19,12 +24,13 @@ jobs:
     - name: 🏗️ Build solution
       run: dotnet build MatchmakingService.sln --no-restore --configuration Release
 
-    - name: 🧪 Run tests (if any)
-      run: |
-        echo "Skipping tests for now - focusing on successful build"
+    - name: 🧪 Run tests
+      run: dotnet test MatchmakingService.Tests/MatchmakingService.Tests.csproj --no-build --configuration Release --logger "console;verbosity=normal"
 
     - name: 📤 Upload build artifacts
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: MatchmakingService-build
         path: bin/Release/net8.0/
+        retention-days: 7
