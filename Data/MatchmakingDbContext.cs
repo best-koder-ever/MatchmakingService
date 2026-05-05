@@ -17,6 +17,7 @@ namespace MatchmakingService.Data
         public DbSet<DailyPick> DailyPicks { get; set; }
         public DbSet<CompatibilityQuestion> CompatibilityQuestions { get; set; }
         public DbSet<CompatibilityAnswer> CompatibilityAnswers { get; set; }
+        public DbSet<MatchInsight> MatchInsights { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -145,6 +146,26 @@ namespace MatchmakingService.Data
             modelBuilder.Entity<MatchingAlgorithmMetric>()
                 .HasIndex(mam => mam.CalculatedAt)
                 .HasDatabaseName("IX_MatchingAlgorithmMetric_CalculatedAt");
+
+            // ─── MatchInsight entity configuration ───
+            modelBuilder.Entity<MatchInsight>()
+                .HasOne(mi => mi.Match)
+                .WithMany()
+                .HasForeignKey(mi => mi.MatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<MatchInsight>()
+                .HasIndex(mi => mi.ForKeycloakId)
+                .HasDatabaseName("IX_MatchInsight_ForKeycloakId");
+
+            modelBuilder.Entity<MatchInsight>()
+                .HasIndex(mi => new { mi.MatchId, mi.ForKeycloakId })
+                .IsUnique()
+                .HasDatabaseName("IX_MatchInsight_MatchId_ForKeycloakId");
+
+            modelBuilder.Entity<MatchInsight>()
+                .Property(mi => mi.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
         }
     }
 }
