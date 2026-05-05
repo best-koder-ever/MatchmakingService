@@ -22,108 +22,6 @@ namespace MatchmakingService.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
-            modelBuilder.Entity("MatchmakingService.Models.CompatibilityAnswer", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AnswerValue")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("KeycloakId")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("QuestionId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("CompatibilityAnswers");
-                });
-
-            modelBuilder.Entity("MatchmakingService.Models.CompatibilityQuestion", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("QuestionText")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("CompatibilityQuestions");
-                });
-
-            modelBuilder.Entity("MatchmakingService.Models.DailyPick", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Acted")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<int>("CandidateUserId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime>("GeneratedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-
-                    b.Property<int>("Rank")
-                        .HasColumnType("int");
-
-                    b.Property<double>("Score")
-                        .HasColumnType("double");
-
-                    b.Property<bool>("Seen")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CandidateUserId");
-
-                    b.HasIndex("ExpiresAt")
-                        .HasDatabaseName("IX_DailyPick_ExpiresAt");
-
-                    b.HasIndex("UserId", "ExpiresAt")
-                        .HasDatabaseName("IX_DailyPick_UserExpiry");
-
-                    b.ToTable("daily_picks", (string)null);
-                });
-
             modelBuilder.Entity("MatchmakingService.Models.Match", b =>
                 {
                     b.Property<int>("Id")
@@ -514,9 +412,6 @@ namespace MatchmakingService.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
-                    b.Property<bool>("IsBot")
-                        .HasColumnType("tinyint(1)");
-
                     b.Property<bool>("IsVerified")
                         .HasColumnType("tinyint(1)");
 
@@ -605,27 +500,6 @@ namespace MatchmakingService.Migrations
                         .HasDatabaseName("IX_UserProfile_ActiveSearch");
 
                     b.ToTable("UserProfiles");
-                });
-
-            modelBuilder.Entity("MatchmakingService.Models.DailyPick", b =>
-                {
-                    b.HasOne("MatchmakingService.Models.UserProfile", "Candidate")
-                        .WithMany()
-                        .HasForeignKey("CandidateUserId")
-                        .HasPrincipalKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("MatchmakingService.Models.UserProfile", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .HasPrincipalKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Candidate");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("MatchmakingService.Models.MatchInsight", b =>
