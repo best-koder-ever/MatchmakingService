@@ -28,6 +28,7 @@ public class LiveScoringStrategy : ICandidateStrategy
     private readonly IAdvancedMatchingService _matchingService;
     private readonly ISwipeServiceClient _swipeServiceClient;
     private readonly ISafetyServiceClient _safetyServiceClient;
+    private readonly IUserProfileSyncService? _userProfileSync;
     private readonly IOptionsMonitor<CandidateOptions> _options;
     private readonly IOptionsMonitor<ScoringConfiguration> _scoringConfig;
     private readonly ILogger<LiveScoringStrategy> _logger;
@@ -40,7 +41,8 @@ public class LiveScoringStrategy : ICandidateStrategy
         ISafetyServiceClient safetyServiceClient,
         IOptionsMonitor<CandidateOptions> options,
         IOptionsMonitor<ScoringConfiguration> scoringConfig,
-        ILogger<LiveScoringStrategy> logger)
+        ILogger<LiveScoringStrategy> logger,
+        IUserProfileSyncService? userProfileSync = null)
     {
         _context = context;
         _filterPipeline = filterPipeline;
@@ -50,6 +52,7 @@ public class LiveScoringStrategy : ICandidateStrategy
         _options = options;
         _scoringConfig = scoringConfig;
         _logger = logger;
+        _userProfileSync = userProfileSync;
     }
 
     public async Task<CandidateResult> GetCandidatesAsync(
@@ -62,6 +65,17 @@ public class LiveScoringStrategy : ICandidateStrategy
         var user = await _context.UserProfiles
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.UserId == userId && u.IsActive, ct);
+
+        if (user == null && _userProfileSync != null)
+        {
+            // Pull-on-demand: profile may exist in UserService but not yet replicated here.
+            _logger.LogInformation("LiveScoring: user {UserId} missing locally, attempting sync from UserService", userId);
+            var synced = await _userProfileSync.EnsureUserAsync(userId, ct);
+            if (synced != null && synced.IsActive)
+            {
+                user = synced;
+            }
+        }
 
         if (user == null)
         {

@@ -188,6 +188,8 @@ builder.Services.AddScoped<MatchmakingService.Strategies.DailyPickStrategy>();
 builder.Services.AddHostedService<MatchmakingService.Services.Background.ScoreRefreshBackgroundService>();
 builder.Services.AddHostedService<MatchmakingService.Services.Background.DailyPickGenerationService>();
 builder.Services.AddScoped<MatchmakingService.Services.DesirabilityCalculator>();
+builder.Services.AddScoped<MatchmakingService.Services.ICompatibilityScorer, MatchmakingService.Services.CompatibilityScorer>();
+builder.Services.AddScoped<MatchmakingService.Services.IUserProfileSyncService, MatchmakingService.Services.UserProfileSyncService>();
 
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>
 {
@@ -276,6 +278,7 @@ using (var scope = app.Services.CreateScope())
     {
         dbContext.Database.Migrate();
     }
+    await MatchmakingService.Data.SeedData.CompatibilityQuestionSeed.SeedAsync(dbContext);
 }
 
 if (app.Environment.IsDevelopment())

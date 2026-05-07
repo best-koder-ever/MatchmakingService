@@ -41,13 +41,18 @@ public class AdminController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "Admin reset disabled in this environment." });
         }
 
-        var matchCount = await _context.Matches.CountAsync();
-        var interactionCount = await _context.UserInteractions.CountAsync();
-        var scoreCount = await _context.MatchScores.CountAsync();
+        var matches = await _context.Matches.ToListAsync();
+        var interactions = await _context.UserInteractions.ToListAsync();
+        var scores = await _context.MatchScores.ToListAsync();
 
-        await _context.Database.ExecuteSqlRawAsync("DELETE FROM Matches");
-        await _context.Database.ExecuteSqlRawAsync("DELETE FROM MatchScores");
-        await _context.Database.ExecuteSqlRawAsync("DELETE FROM UserInteractions");
+        var matchCount = matches.Count;
+        var interactionCount = interactions.Count;
+        var scoreCount = scores.Count;
+
+        _context.Matches.RemoveRange(matches);
+        _context.MatchScores.RemoveRange(scores);
+        _context.UserInteractions.RemoveRange(interactions);
+        await _context.SaveChangesAsync();
 
         _logger.LogWarning(
             "[FINDING] High AdminReset: cleared {MatchCount} matches, {InteractionCount} interactions, {ScoreCount} scores by {User}",
