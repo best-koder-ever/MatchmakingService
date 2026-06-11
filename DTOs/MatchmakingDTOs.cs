@@ -130,3 +130,30 @@ namespace MatchmakingService.DTOs
         public int UnreadMessagesCount { get; set; }
     }
 }
+
+    /// <summary>
+    /// Response for the Top Picks endpoint — daily curated high-compatibility profiles.
+    /// </summary>
+    public class TopPicksResponse
+    {
+        public List<TopPickProfileResponse> TopPicks { get; set; } = new();
+        public int Count { get; set; }
+        public int SparksBalance { get; set; }
+        public int SparksCostPerConnect { get; set; } = 1;
+        public DateTime NextRefreshAt { get; set; }
+    }
+
+    public class TopPickProfileResponse
+    {
+        public int ProfileId { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+        public int Age { get; set; }
+        public string? Bio { get; set; }
+        public string? PrimaryPhotoUrl { get; set; }
+        public List<string> Photos { get; set; } = new();
+        public double CompatibilityScore { get; set; }
+        public string MatchReason { get; set; } = string.Empty;
+        public string? City { get; set; }
+        public string? Occupation { get; set; }
+        public string? Gender { get; set; }
+    }

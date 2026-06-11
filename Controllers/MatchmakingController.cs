@@ -715,6 +715,9 @@ namespace MatchmakingService.Controllers
                     overallScore = Math.Round(match.CompatibilityScore, 1),
                     reasons = Array.Empty<string>(),
                     frictions = Array.Empty<string>(),
+                    connectionHook = (object?)null,
+                    connectionSignals = Array.Empty<object>(),
+                    confidenceLevel = "InsufficientData",
                     tier = "free",
                     available = false,
                 });
@@ -743,6 +746,13 @@ namespace MatchmakingService.Controllers
                 overallScore = Math.Round(insight.OverallScore, 1),
                 reasons = isPremium ? reasons : reasons.Take(2).ToArray(),
                 frictions = isPremium ? frictions : Array.Empty<string>(),
+                connectionHook = insight.ConnectionHookJson != null
+                    ? JsonSerializer.Deserialize<object>(insight.ConnectionHookJson)
+                    : null,
+                connectionSignals = insight.ConnectionSignalsJson != null
+                    ? JsonSerializer.Deserialize<object[]>(insight.ConnectionSignalsJson)
+                    : Array.Empty<object>(),
+                confidenceLevel = insight.ConfidenceLevel ?? "InsufficientData",
                 tier = isPremium ? "premium" : "free",
                 available = true,
             });
@@ -931,5 +941,54 @@ namespace MatchmakingService.Controllers
                 return StatusCode(500, "An error occurred while deleting user matches");
             }
         }
+        // Dev: Regenerate connection insight for a match (T540+).
+        // Available in Development and Demo environments.
+        [HttpPost("matches/{matchId}/regenerate-insight")]
+        [Authorize]
+        public async Task<IActionResult> RegenerateInsight(int matchId)
+        {
+            var env = _configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") ?? "Production";
+            if (env != "Development" && env != "Demo")
+                return NotFound();
+
+            var match = await _context.Matches.FindAsync(matchId);
+            if (match == null) return NotFound("Match not found");
+
+            if (_matchInsightService != null)
+            {
+                await _matchInsightService.GenerateForMatchAsync(
+                    match.Id, match.User1Id, match.User2Id, match.CompatibilityScore);
+            }
+
+            return Ok(new { regenerated = true, matchId });
+        }
+
+        // Dev: Regenerate connection insight for ALL active matches (T540+).
+        [HttpPost("matches/regenerate-all-insights")]
+        [Authorize]
+        public async Task<IActionResult> RegenerateAllInsights()
+        {
+            var env = _configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") ?? "Production";
+            if (env != "Development" && env != "Demo")
+                return NotFound();
+
+            var matches = await _context.Matches
+                .Where(m => m.IsActive)
+                .ToListAsync();
+
+            var count = 0;
+            foreach (var match in matches)
+            {
+                if (_matchInsightService != null)
+                {
+                    await _matchInsightService.GenerateForMatchAsync(
+                        match.Id, match.User1Id, match.User2Id, match.CompatibilityScore);
+                    count++;
+                }
+            }
+
+            return Ok(new { regenerated = count });
+        }
+
     }
 }
