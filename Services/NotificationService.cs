@@ -13,6 +13,7 @@ namespace MatchmakingService.Services
     {
         Task NotifyMatchAsync(int userId1, int userId2, int matchId);
         Task NotifyNewLikeAsync(int userId, int likedByUserId);
+        Task NotifySparkReceivedAsync(string recipientUserId, string senderUserId, string? message);
     }
 
     /// <summary>
@@ -118,6 +119,31 @@ namespace MatchmakingService.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send like notification to user {UserId}", userId);
+            }
+        }
+
+        public async Task NotifySparkReceivedAsync(string recipientUserId, string senderUserId, string? message)
+        {
+            try
+            {
+                var notification = new
+                {
+                    Type = "SparkReceived",
+                    RecipientUserId = recipientUserId,
+                    SenderUserId = senderUserId,
+                    Message = message ?? "",
+                    Timestamp = DateTime.UtcNow
+                };
+
+                // Real-time SignalR notification (primary delivery)
+                await _hubContext.Clients.Group($"user_{recipientUserId}").SendAsync("SparkReceived", notification);
+
+                _logger.LogInformation("Real-time spark notification sent to user {Recipient} from {Sender}",
+                    recipientUserId, senderUserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send spark notification to user {UserId}", recipientUserId);
             }
         }
 
