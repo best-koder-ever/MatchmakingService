@@ -16,7 +16,9 @@ namespace MatchmakingService.Tests.Services;
 public class MatchInsightServiceTests : IDisposable
 {
     private readonly MatchmakingDbContext _context;
-    private readonly Mock<ICompatibilityScorer> _scorer = new();
+        private readonly Mock<ICompatibilityScorer> _scorer = new();
+    private readonly Mock<IConnectionInsightComposer> _composer = new();
+    private readonly Mock<IPsychometricProfileService> _profileService = new();
     private readonly MatchInsightService _service;
 
     public MatchInsightServiceTests()
@@ -25,7 +27,7 @@ public class MatchInsightServiceTests : IDisposable
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
         _context = new MatchmakingDbContext(options);
-        _service = new MatchInsightService(_context, _scorer.Object, new Mock<ILogger<MatchInsightService>>().Object);
+        _service = new MatchInsightService(_context, _scorer.Object, _composer.Object, _profileService.Object, new Mock<ILogger<MatchInsightService>>().Object);
     }
 
     public void Dispose()

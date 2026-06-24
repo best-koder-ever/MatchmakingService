@@ -36,6 +36,27 @@ namespace MatchmakingService.Models
         /// <summary>Overall compatibility score 0–100 at time of match creation.</summary>
         public double OverallScore { get; set; }
 
+        // ─── Connection Insight fields (spec 005 T540+) ───
+
+        /// <summary>
+        /// JSON — serialized <c>ConnectionHook</c> for the Flutter card.
+        /// Null until <c>ConnectionInsightComposer</c> has run.
+        /// </summary>
+        public string? ConnectionHookJson { get; set; }
+
+        /// <summary>
+        /// JSON array of serialized <c>ConnectionSignal</c> objects.
+        /// Null until <c>ConnectionInsightComposer</c> has run.
+        /// </summary>
+        public string? ConnectionSignalsJson { get; set; }
+
+        /// <summary>
+        /// Overall confidence: High / Medium / Low / InsufficientData.
+        /// Null until composer has run.
+        /// </summary>
+        [StringLength(20)]
+        public string? ConfidenceLevel { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }

@@ -26,7 +26,7 @@ public class CompatibilityScorerTests : IDisposable
             .UseInMemoryDatabase($"CompatScorer_{Guid.NewGuid()}")
             .Options;
         _db = new MatchmakingDbContext(options);
-        _scorer = new CompatibilityScorer(_db, Mock.Of<ILogger<CompatibilityScorer>>());
+        _scorer = new CompatibilityScorer(_db, Mock.Of<ILogger<CompatibilityScorer>>(), Mock.Of<IUserServiceClient>());
     }
 
     public void Dispose() => _db.Dispose();

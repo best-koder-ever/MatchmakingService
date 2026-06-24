@@ -39,11 +39,15 @@ namespace MatchmakingService.Services
             };
 
         private const double VoiceBaseAgreement = 0.7;
+        private const double VectorWeight = 0.40;
 
-        public CompatibilityScorer(MatchmakingDbContext db, ILogger<CompatibilityScorer> logger)
+        private readonly IUserServiceClient _userClient;
+
+        public CompatibilityScorer(MatchmakingDbContext db, ILogger<CompatibilityScorer> logger, IUserServiceClient userClient)
         {
             _db = db;
             _logger = logger;
+            _userClient = userClient;
         }
 
         public async Task<CompatibilityResult> ScoreAsync(string keycloakIdA, string keycloakIdB, CancellationToken ct = default)
@@ -115,6 +119,15 @@ namespace MatchmakingService.Services
             {
                 var totalCatWeight = categoryScores.Keys.Sum(c => DefaultCategoryWeights[c]);
                 overall = categoryScores.Sum(kv => kv.Value * DefaultCategoryWeights[kv.Key]) / totalCatWeight;
+            }
+
+            // Blend in reflection vector similarity (T579): 40% weight when both users have a vector.
+            var vectorSimilarity = await _userClient.GetVectorSimilarityAsync(keycloakIdA, keycloakIdB);
+            if (vectorSimilarity.HasValue)
+            {
+                var vectorScore = vectorSimilarity.Value * 100.0;
+                overall = overall * (1 - VectorWeight) + vectorScore * VectorWeight;
+                _logger.LogDebug("Blended vector similarity {Sim:F3} → adjusted overall {Overall:F1}", vectorSimilarity.Value, overall);
             }
 
             // Reasons / frictions: pick by extreme per-question agreement.

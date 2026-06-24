@@ -4,6 +4,7 @@ using MatchmakingService.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace MatchmakingService.Migrations
 {
     [DbContext(typeof(MatchmakingDbContext))]
-    partial class MatchmakingDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260609083640_ConnectionInsightV1")]
+    partial class ConnectionInsightV1
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -493,46 +496,6 @@ namespace MatchmakingService.Migrations
                     b.ToTable("Messages");
                 });
 
-            modelBuilder.Entity("MatchmakingService.Models.PostDateFeedback", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ChemistryRating")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ConversationRating")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("FreeformReflection")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<string>("KeycloakId")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("MatchId")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("OverallRating")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("WouldMeetAgain")
-                        .HasColumnType("tinyint(1)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("PostDateFeedbacks");
-                });
-
             modelBuilder.Entity("MatchmakingService.Models.PsychometricProfile", b =>
                 {
                     b.Property<int>("Id")
@@ -583,54 +546,6 @@ namespace MatchmakingService.Migrations
                         .HasDatabaseName("IX_PsychometricProfile_UserId");
 
                     b.ToTable("PsychometricProfiles");
-                });
-
-            modelBuilder.Entity("MatchmakingService.Models.RadarProfile", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<double>("Confidence")
-                        .HasColumnType("double");
-
-                    b.Property<double>("ConflictStyle")
-                        .HasColumnType("double");
-
-                    b.Property<double>("EmotionalStability")
-                        .HasColumnType("double");
-
-                    b.Property<double>("IntimacyComfort")
-                        .HasColumnType("double");
-
-                    b.Property<string>("KeycloakId")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<double>("LifeStructure")
-                        .HasColumnType("double");
-
-                    b.Property<double>("Openness")
-                        .HasColumnType("double");
-
-                    b.Property<double>("SocialEnergy")
-                        .HasColumnType("double");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<double>("Warmth")
-                        .HasColumnType("double");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("KeycloakId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_RadarProfile_KeycloakId_Unique");
-
-                    b.ToTable("RadarProfiles");
                 });
 
             modelBuilder.Entity("MatchmakingService.Models.UserInteraction", b =>

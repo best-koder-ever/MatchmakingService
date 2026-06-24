@@ -1,363 +1,214 @@
 using System.Security.Claims;
-using System.Text.Json;
+using MatchmakingService.Commands;
+using MatchmakingService.Common;
 using MatchmakingService.Data;
 using MatchmakingService.DTOs;
 using MatchmakingService.Models;
+using MatchmakingService.Queries;
 using MatchmakingService.Services;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace MatchmakingService.Controllers
+namespace MatchmakingService.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class CompatibilityController : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class CompatibilityController : ControllerBase
+    private readonly MatchmakingDbContext _context;
+    private readonly IUserServiceClient _userServiceClient;
+    private readonly ILogger<CompatibilityController> _logger;
+    private readonly RadarProfileCalculator _radar;
+    private readonly ISender _sender;
+
+    public CompatibilityController(
+        MatchmakingDbContext context,
+        IUserServiceClient userServiceClient,
+        ILogger<CompatibilityController> logger,
+        RadarProfileCalculator radar,
+        ISender sender)
     {
-        private readonly MatchmakingDbContext _db;
-        private readonly ILogger<CompatibilityController> _logger;
-        private readonly ICompatibilityScorer _scorer;
+        _context = context;
+        _userServiceClient = userServiceClient;
+        _logger = logger;
+        _radar = radar;
+        _sender = sender;
+    }
 
-        public CompatibilityController(MatchmakingDbContext db, ICompatibilityScorer scorer, ILogger<CompatibilityController> logger)
+    [HttpGet("questions")]
+    [Authorize]
+    public async Task<IActionResult> GetQuestions()
+    {
+        var result = await _sender.Send(new GetCompatibilityQuestionsQuery());
+        return Ok(new { questions = result.Data!.Questions, grouped = result.Data.Grouped });
+    }
+
+    [HttpPost("answers")]
+    [Authorize]
+    public async Task<IActionResult> SubmitAnswers([FromBody] SubmitAnswersRequest req)
+    {
+        var keycloakId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrEmpty(keycloakId)) return Unauthorized();
+        if (req.Answers == null || req.Answers.Count == 0)
+            return BadRequest(new { error = "At least one answer is required." });
+
+        var command = new SubmitAnswersCommand(
+            keycloakId,
+            req.Answers.Select(a => new AnswerItemDto(a.QuestionId, a.Value, a.AnswerType)).ToList());
+
+        var result = await _sender.Send(command);
+        if (!result.IsSuccess)
         {
-            _db = db;
-            _scorer = scorer;
-            _logger = logger;
-        }
-
-        /// <summary>Get all active compatibility questions (includes voice-eligible flags).</summary>
-        [HttpGet("questions")]
-        [Authorize]
-        public async Task<ActionResult<List<CompatibilityQuestionDto>>> GetQuestions()
-        {
-            var questions = await _db.CompatibilityQuestions
-                .Where(q => q.IsActive)
-                .OrderBy(q => q.SortOrder)
-                .ToListAsync();
-
-            var dtos = questions.Select(q =>
+            return result.ErrorCode switch
             {
-                var options = JsonSerializer.Deserialize<List<QuestionOptionDto>>(
-                    q.OptionsJson,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-                ) ?? new List<QuestionOptionDto>();
-
-                return new CompatibilityQuestionDto(
-                    q.Id, q.Category.ToString(), q.Emoji,
-                    q.TextEn, q.TextSv, options, q.SortOrder,
-                    q.VoiceEligible, q.VoicePromptText, q.VoicePromptTextSv
-                );
-            }).ToList();
-
-            return Ok(dtos);
-        }
-
-        /// <summary>Submit or update tap answers (upsert).</summary>
-        [HttpPost("answers")]
-        [Authorize]
-        public async Task<ActionResult<SubmitAnswersResponse>> SubmitAnswers([FromBody] SubmitAnswersRequest request)
-        {
-            var keycloakId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                          ?? User.FindFirstValue("sub");
-            if (string.IsNullOrEmpty(keycloakId))
-                return Unauthorized();
-
-            if (request.Answers == null || request.Answers.Count == 0)
-                return BadRequest("No answers provided.");
-
-            var questionIds = request.Answers.Select(a => a.QuestionId).ToList();
-            var validIds = await _db.CompatibilityQuestions
-                .Where(q => questionIds.Contains(q.Id) && q.IsActive)
-                .Select(q => q.Id)
-                .ToListAsync();
-
-            var existing = await _db.UserQuestionAnswers
-                .Where(a => a.KeycloakId == keycloakId && questionIds.Contains(a.QuestionId))
-                .ToDictionaryAsync(a => a.QuestionId);
-
-            int saved = 0;
-            foreach (var answer in request.Answers)
-            {
-                if (!validIds.Contains(answer.QuestionId)) continue;
-
-                if (existing.TryGetValue(answer.QuestionId, out var existingAnswer))
-                {
-                    existingAnswer.Value = answer.Value;
-                    existingAnswer.AnswerType = "tap";
-                    existingAnswer.AnsweredAt = DateTime.UtcNow;
-                }
-                else
-                {
-                    _db.UserQuestionAnswers.Add(new UserQuestionAnswer
-                    {
-                        KeycloakId = keycloakId,
-                        QuestionId = answer.QuestionId,
-                        Value = answer.Value,
-                        AnswerType = "tap",
-                        AnsweredAt = DateTime.UtcNow
-                    });
-                }
-                saved++;
-            }
-
-            await _db.SaveChangesAsync();
-            await InvalidateScoresForUserAsync(keycloakId);
-            _logger.LogInformation("User {KeycloakId} saved {Count} tap answers", keycloakId, saved);
-            return Ok(new SubmitAnswersResponse(saved, $"Saved {saved} answers"));
-        }
-
-        /// <summary>Submit a voice answer with transcript — scores quality and returns feedback.</summary>
-        [HttpPost("voice-answer")]
-        [Authorize]
-        public async Task<ActionResult<VoiceAnswerResponse>> SubmitVoiceAnswer([FromBody] SubmitVoiceAnswerRequest request)
-        {
-            var keycloakId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                          ?? User.FindFirstValue("sub");
-            if (string.IsNullOrEmpty(keycloakId))
-                return Unauthorized();
-
-            if (string.IsNullOrWhiteSpace(request.Transcript))
-                return BadRequest("Transcript is required.");
-
-            var question = await _db.CompatibilityQuestions
-                .FirstOrDefaultAsync(q => q.Id == request.QuestionId && q.IsActive);
-            if (question == null)
-                return NotFound("Question not found.");
-
-            // Score the transcript
-            var quality = AnswerQualityService.ScoreTranscript(request.Transcript, request.DurationSeconds);
-            var breakdownJson = JsonSerializer.Serialize(quality.Breakdown);
-
-            // Upsert answer
-            var existing = await _db.UserQuestionAnswers
-                .FirstOrDefaultAsync(a => a.KeycloakId == keycloakId && a.QuestionId == request.QuestionId);
-
-            if (existing != null)
-            {
-                existing.AnswerType = "voice";
-                existing.VoiceTranscript = request.Transcript;
-                existing.DepthScore = quality.Score;
-                existing.QualityBreakdown = breakdownJson;
-                existing.VoiceDurationSeconds = request.DurationSeconds;
-                existing.AnsweredAt = DateTime.UtcNow;
-            }
-            else
-            {
-                _db.UserQuestionAnswers.Add(new UserQuestionAnswer
-                {
-                    KeycloakId = keycloakId,
-                    QuestionId = request.QuestionId,
-                    Value = 0, // Voice answers don't use the fixed-option value
-                    AnswerType = "voice",
-                    VoiceTranscript = request.Transcript,
-                    DepthScore = quality.Score,
-                    QualityBreakdown = breakdownJson,
-                    VoiceDurationSeconds = request.DurationSeconds,
-                    AnsweredAt = DateTime.UtcNow
-                });
-            }
-
-            await _db.SaveChangesAsync();
-            await InvalidateScoresForUserAsync(keycloakId);
-            _logger.LogInformation("User {KeycloakId} submitted voice answer for Q{QuestionId}, score={Score}",
-                keycloakId, request.QuestionId, quality.Score);
-
-            return Ok(new VoiceAnswerResponse(
-                request.QuestionId,
-                quality.Score,
-                quality.Stars,
-                quality.Feedback,
-                new QualityBreakdownDto(
-                    quality.Breakdown.WordCountScore,
-                    quality.Breakdown.VocabularyScore,
-                    quality.Breakdown.ExpressionScore,
-                    quality.Breakdown.SpecificityScore
-                )
-            ));
-        }
-
-        /// <summary>Get current user's profile depth score.</summary>
-        [HttpGet("profile-depth")]
-        [Authorize]
-        public async Task<ActionResult<ProfileDepthResponse>> GetProfileDepth()
-        {
-            var keycloakId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                          ?? User.FindFirstValue("sub");
-            if (string.IsNullOrEmpty(keycloakId))
-                return Unauthorized();
-
-            var answers = await _db.UserQuestionAnswers
-                .Where(a => a.KeycloakId == keycloakId)
-                .ToListAsync();
-
-            var totalQuestions = await _db.CompatibilityQuestions.CountAsync(q => q.IsActive);
-            var tapCount = answers.Count(a => a.AnswerType == "tap");
-            var voiceCount = answers.Count(a => a.AnswerType == "voice");
-
-            // Calculate overall score:
-            // - Each tap answer = 3 points (answered, but shallow)
-            // - Each voice answer = its depth score (0-100)
-            // - Normalize to 0-100 based on total questions
-            var tapPoints = tapCount * 3.0;
-            var voicePoints = answers.Where(a => a.AnswerType == "voice").Sum(a => a.DepthScore ?? 0);
-            var maxPossible = totalQuestions * 100.0;
-            var overall = maxPossible > 0 ? (int)Math.Min(100, (tapPoints + voicePoints) / maxPossible * 100) : 0;
-
-            var stars = overall switch
-            {
-                < 10 => 1,
-                < 25 => 2,
-                < 50 => 3,
-                < 75 => 4,
-                _ => 5
+                "INVALID_QUESTIONS" => BadRequest(new { error = result.Error }),
+                "OUT_OF_RANGE" => BadRequest(new { error = result.Error }),
+                _ => BadRequest(new { error = result.Error })
             };
-
-            var feedback = stars switch
-            {
-                1 => "Answer more questions to boost your profile!",
-                2 => "Good start! Voice answers give the biggest boost",
-                3 => "Nice profile depth! You're ahead of most users",
-                4 => "Great depth! Your matches will be more accurate",
-                _ => "Top-tier profile! Best possible match quality 🌟"
-            };
-
-            return Ok(new ProfileDepthResponse(overall, stars, tapCount, voiceCount, totalQuestions, feedback));
         }
+        return Ok(new { saved = result.Data!.Saved, totalAnswered = result.Data.TotalAnswered });
+    }
 
-        /// <summary>Get current user's answers.</summary>
-        [HttpGet("answers")]
-        [Authorize]
-        public async Task<ActionResult<List<UserAnswerDto>>> GetMyAnswers()
+    [HttpGet("answers/{keycloakId}")]
+    [Authorize]
+    public async Task<IActionResult> GetAnswers(string keycloakId)
+    {
+        var caller = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (caller != keycloakId) return Forbid();
+
+        var result = await _sender.Send(new GetUserAnswersQuery(keycloakId));
+        return Ok(new { keycloakId = result.Data!.KeycloakId, answers = result.Data.Answers, count = result.Data.Count });
+    }
+
+    [HttpGet("preview/{candidateUserId:int}")]
+    [Authorize]
+    public async Task<IActionResult> GetPreMatchInsight(int candidateUserId)
+    {
+        var keycloakId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrEmpty(keycloakId)) return Unauthorized();
+        var myProfile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.KeycloakId == keycloakId);
+        if (myProfile == null) return NotFound("Your profile not found in matchmaking service");
+        var theirProfile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == candidateUserId);
+        if (theirProfile == null) return NotFound("Candidate profile not found");
+        var myInterests = ParseJsonList(myProfile.Interests);
+        var theirInterests = ParseJsonList(theirProfile.Interests);
+        var shared = myInterests.Intersect(theirInterests, StringComparer.OrdinalIgnoreCase).ToList();
+        var commonalities = new List<string>();
+        if (!string.IsNullOrEmpty(myProfile.City) && string.Equals(myProfile.City, theirProfile.City, StringComparison.OrdinalIgnoreCase))
+            commonalities.Add($"Both in {myProfile.City}");
+        if (!string.IsNullOrEmpty(myProfile.Occupation) && string.Equals(myProfile.Occupation, theirProfile.Occupation, StringComparison.OrdinalIgnoreCase))
+            commonalities.Add($"Both {myProfile.Occupation}s");
+        var headline = shared.Count switch
         {
-            var keycloakId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                          ?? User.FindFirstValue("sub");
-            if (string.IsNullOrEmpty(keycloakId))
-                return Unauthorized();
-
-            var answers = await _db.UserQuestionAnswers
-                .Where(a => a.KeycloakId == keycloakId)
-                .Select(a => new UserAnswerDto(a.QuestionId, a.Value, a.AnsweredAt, a.AnswerType, a.DepthScore))
-                .ToListAsync();
-
-            return Ok(answers);
-        }
-
-        /// <summary>
-        /// T523: Get cached pairwise compatibility score, or compute + cache on demand.
-        /// </summary>
-        [HttpGet("score/{otherKeycloakId}")]
-        [Authorize]
-        public async Task<ActionResult<CompatibilityScoreDto>> GetScore(string otherKeycloakId)
+            >= 2 => $"You both enjoy {shared[0]} and {shared[1]}",
+            1 => $"You both enjoy {shared[0]}",
+            _ when commonalities.Count > 0 => commonalities[0],
+            _ => "See what you might have in common"
+        };
+        var chips = new List<string>();
+        chips.AddRange(shared.Take(3).Select(s => char.ToUpper(s[0]) + s[1..]));
+        chips.AddRange(commonalities.Take(3 - chips.Count));
+        return Ok(new
         {
-            var keycloakId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                          ?? User.FindFirstValue("sub");
-            if (string.IsNullOrEmpty(keycloakId))
-                return Unauthorized();
-            if (string.IsNullOrWhiteSpace(otherKeycloakId))
-                return BadRequest("otherKeycloakId is required.");
-            if (string.Equals(keycloakId, otherKeycloakId, StringComparison.Ordinal))
-                return BadRequest("Cannot compute compatibility with self.");
+            headline, body = "", evidenceChips = chips,
+            suggestedPrompt = shared.Count > 0 ? $"Ask what got them into {shared[0].ToLowerInvariant()}" : "Ask what they're passionate about",
+            confidenceLabel = shared.Count > 0 ? "Common ground" : "Worth exploring",
+            tone = shared.Count > 0 ? "warm" : "curious"
+        });
+    }
 
-            var (id1, id2) = OrderPair(keycloakId, otherKeycloakId);
+    private static List<string> ParseJsonList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch { return []; }
+    }
 
-            var cached = await _db.CompatibilityScores
-                .FirstOrDefaultAsync(s => s.KeycloakId1 == id1 && s.KeycloakId2 == id2);
+    // ── GET /api/compatibility/radar/{keycloakId} ─────────────────────────
 
-            CompatibilityResult result;
-            if (cached != null)
-            {
-                result = new CompatibilityResult(
-                    cached.OverallScore,
-                    cached.PersonalityScore,
-                    cached.ValuesScore,
-                    cached.AttachmentScore,
-                    cached.LifestyleScore,
-                    cached.SharedAnswerCount,
-                    DeserializeStringList(cached.TopReasonsJson),
-                    DeserializeStringList(cached.FrictionPointsJson)
-                );
-            }
-            else
-            {
-                result = await _scorer.ScoreAsync(id1, id2);
-                _db.CompatibilityScores.Add(new CompatibilityScore
-                {
-                    KeycloakId1 = id1,
-                    KeycloakId2 = id2,
-                    OverallScore = result.OverallScore,
-                    PersonalityScore = result.PersonalityScore,
-                    ValuesScore = result.ValuesScore,
-                    AttachmentScore = result.AttachmentScore,
-                    LifestyleScore = result.LifestyleScore,
-                    SharedAnswerCount = result.SharedAnswerCount,
-                    TopReasonsJson = JsonSerializer.Serialize(result.TopReasons),
-                    FrictionPointsJson = JsonSerializer.Serialize(result.FrictionPoints),
-                    CalculatedAt = DateTime.UtcNow,
-                });
-                await _db.SaveChangesAsync();
-            }
+    [HttpGet("radar/{keycloakId}")]
+    [Authorize]
+    public async Task<IActionResult> GetRadarProfile(string keycloakId)
+    {
+        var caller = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (caller != keycloakId) return Forbid();
 
-            return Ok(new CompatibilityScoreDto(
-                otherKeycloakId,
-                result.OverallScore,
-                result.PersonalityScore,
-                result.ValuesScore,
-                result.AttachmentScore,
-                result.LifestyleScore,
-                result.SharedAnswerCount,
-                result.TopReasons.ToList(),
-                result.FrictionPoints.ToList(),
-                cached?.CalculatedAt ?? DateTime.UtcNow
-            ));
-        }
-
-        private static (string, string) OrderPair(string a, string b)
-            => string.CompareOrdinal(a, b) < 0 ? (a, b) : (b, a);
-
-        private static List<string> DeserializeStringList(string json)
+        var profile = await _context.RadarProfiles.FirstOrDefaultAsync(r => r.KeycloakId == keycloakId);
+        if (profile == null)
         {
-            try
-            {
-                return JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
-            }
-            catch (JsonException)
-            {
-                return new List<string>();
-            }
+            // Compute on-demand if not yet cached
+            profile = await _radar.ComputeAndSaveAsync(keycloakId);
         }
+        return Ok(MapRadarDto(profile));
+    }
 
-        /// <summary>Drop all cached pair scores involving this user (called when answers change).</summary>
-        private async Task InvalidateScoresForUserAsync(string keycloakId)
+    // ── GET /api/compatibility/radar/me ──────────────────────────────────
+
+    [HttpGet("radar/me")]
+    [Authorize]
+    public async Task<IActionResult> GetMyRadarProfile()
+    {
+        var keycloakId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrEmpty(keycloakId)) return Unauthorized();
+
+        var profile = await _context.RadarProfiles.FirstOrDefaultAsync(r => r.KeycloakId == keycloakId);
+        if (profile == null)
         {
-            var stale = await _db.CompatibilityScores
-                .Where(s => s.KeycloakId1 == keycloakId || s.KeycloakId2 == keycloakId)
-                .ToListAsync();
-            if (stale.Count == 0) return;
-            _db.CompatibilityScores.RemoveRange(stale);
-            await _db.SaveChangesAsync();
-            _logger.LogDebug("Invalidated {Count} cached compatibility scores for {User}", stale.Count, keycloakId);
+            profile = await _radar.ComputeAndSaveAsync(keycloakId);
         }
+        return Ok(MapRadarDto(profile));
+    }
 
-        /// <summary>Legacy: pseudo-score between two users (placeholder until real scoring).</summary>
-        [HttpGet("{userId1}/{userId2}")]
-        [Authorize]
-        public IActionResult GetCompatibility(string userId1, string userId2)
+    // ── GET /api/compatibility/radar/compare/{otherKeycloakId} ───────────
+
+    [HttpGet("radar/compare/{otherKeycloakId}")]
+    [Authorize]
+    public async Task<IActionResult> CompareRadarProfiles(string otherKeycloakId)
+    {
+        var myId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrEmpty(myId)) return Unauthorized();
+
+        var myProfile = await _context.RadarProfiles.FirstOrDefaultAsync(r => r.KeycloakId == myId)
+                        ?? await _radar.ComputeAndSaveAsync(myId);
+        var theirProfile = await _context.RadarProfiles.FirstOrDefaultAsync(r => r.KeycloakId == otherKeycloakId);
+
+        return Ok(new
         {
-            var hash = Math.Abs((userId1 + userId2).GetHashCode());
-            var interests = (hash % 40) + 30;
-            var location = (hash % 30) + 40;
-            var preference = (hash % 50) + 25;
-            var overall = (int)((interests * 0.4) + (location * 0.3) + (preference * 0.3));
+            mine = MapRadarDto(myProfile),
+            theirs = theirProfile != null ? MapRadarDto(theirProfile) : null
+        });
+    }
 
-            return Ok(new
-            {
-                UserId1 = userId1,
-                UserId2 = userId2,
-                OverallScore = Math.Clamp(overall, 0, 100),
-                InterestsScore = interests,
-                LocationScore = location,
-                PreferenceScore = preference,
-            });
-        }
+    private static object MapRadarDto(RadarProfile p) => new
+    {
+        p.KeycloakId,
+        axes = new
+        {
+            emotionalStability = p.EmotionalStability,
+            socialEnergy       = p.SocialEnergy,
+            openness           = p.Openness,
+            warmth             = p.Warmth,
+            lifeStructure      = p.LifeStructure,
+            intimacyComfort    = p.IntimacyComfort,
+            conflictStyle      = p.ConflictStyle
+        },
+        p.Confidence,
+        p.UpdatedAt
+    };
+
+    // ── POST /api/compatibility/radar/refresh/{keycloakId} ───────────────
+    // Service-to-service: UserService triggers this after psykolog session ends.
+
+    [HttpPost("radar/refresh/{keycloakId}")]
+    [ServiceFilter(typeof(InternalApiKeyAuthFilter))]
+    public async Task<IActionResult> RefreshRadarProfile(string keycloakId)
+    {
+        var profile = await _radar.ComputeAndSaveAsync(keycloakId);
+        return Ok(MapRadarDto(profile));
     }
 }
+
+public record AnswerItem(int QuestionId, int Value, string? AnswerType = "tap");
+public record SubmitAnswersRequest(List<AnswerItem> Answers);

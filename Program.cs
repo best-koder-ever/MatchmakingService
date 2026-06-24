@@ -133,6 +133,9 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<MatchmakingService.Services.MatchmakingService>();
 builder.Services.AddScoped<IAdvancedMatchingService, AdvancedMatchingService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// MediatR — register all handlers in this assembly (T512)
+builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 builder.Services.AddScoped<IHealthMetricsService, HealthMetricsService>();
 builder.Services.AddHttpClient();
 
@@ -193,7 +196,12 @@ builder.Services.Configure<MatchmakingService.Services.Background.CompatibilityP
 builder.Services.AddHostedService<MatchmakingService.Services.Background.CompatibilityPrecomputeService>();
 builder.Services.AddScoped<MatchmakingService.Services.DesirabilityCalculator>();
 builder.Services.AddScoped<MatchmakingService.Services.ICompatibilityScorer, MatchmakingService.Services.CompatibilityScorer>();
+builder.Services.AddScoped<MatchmakingService.Services.IRadarProfileCalculator, MatchmakingService.Services.RadarProfileCalculator>();
+builder.Services.AddScoped<MatchmakingService.Services.RadarProfileCalculator>();
 builder.Services.AddScoped<MatchmakingService.Services.IMatchInsightService, MatchmakingService.Services.MatchInsightService>();
+builder.Services.AddScoped<MatchmakingService.Services.IPsychometricScorer, MatchmakingService.Services.PsychometricScorer>();
+builder.Services.AddScoped<MatchmakingService.Services.IPsychometricProfileService, MatchmakingService.Services.PsychometricProfileService>();
+builder.Services.AddScoped<MatchmakingService.Services.IConnectionInsightComposer, MatchmakingService.Services.ConnectionInsightComposer>();
 builder.Services.AddScoped<MatchmakingService.Services.IUserProfileSyncService, MatchmakingService.Services.UserProfileSyncService>();
 
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>

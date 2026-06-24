@@ -19,6 +19,9 @@ namespace MatchmakingService.Data
         public DbSet<UserQuestionAnswer> UserQuestionAnswers { get; set; }
         public DbSet<CompatibilityScore> CompatibilityScores { get; set; }
         public DbSet<MatchInsight> MatchInsights { get; set; }
+        public DbSet<PsychometricProfile> PsychometricProfiles { get; set; }
+        public DbSet<RadarProfile> RadarProfiles { get; set; }
+        public DbSet<PostDateFeedback> PostDateFeedbacks { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -106,6 +109,16 @@ namespace MatchmakingService.Data
             modelBuilder.Entity<MatchInsight>()
                 .HasIndex(mi => mi.ForKeycloakId)
                 .HasDatabaseName("IX_MatchInsight_ForKeycloakId");
+
+            // T540: PsychometricProfile — unique per user
+            modelBuilder.Entity<PsychometricProfile>()
+                .HasIndex(pp => pp.UserId)
+                .IsUnique()
+                .HasDatabaseName("IX_PsychometricProfile_UserId");
+
+            modelBuilder.Entity<PsychometricProfile>()
+                .HasIndex(pp => pp.KeycloakId)
+                .HasDatabaseName("IX_PsychometricProfile_KeycloakId");
 
             modelBuilder.Entity<UserProfile>()
                 .Property(up => up.DesirabilityScore)
@@ -212,6 +225,13 @@ namespace MatchmakingService.Data
                     .IsUnique()
                     .HasDatabaseName("IX_CompatScore_Pair");
                 entity.HasIndex(e => e.CalculatedAt).HasDatabaseName("IX_CompatScore_CalculatedAt");
+            });
+
+            modelBuilder.Entity<RadarProfile>(entity =>
+            {
+                entity.HasIndex(r => r.KeycloakId)
+                    .IsUnique()
+                    .HasDatabaseName("IX_RadarProfile_KeycloakId_Unique");
             });
         }
     }
