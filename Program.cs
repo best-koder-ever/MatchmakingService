@@ -138,6 +138,11 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 builder.Services.AddScoped<IHealthMetricsService, HealthMetricsService>();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient<VideoServiceClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://localhost:8080");
+    client.Timeout = TimeSpan.FromSeconds(3);
+});
 
 // Register scoring configuration with hot-reload support
 builder.Services.Configure<MatchmakingService.Models.ScoringConfiguration>(
@@ -195,6 +200,7 @@ builder.Services.Configure<MatchmakingService.Services.Background.CompatibilityP
     builder.Configuration.GetSection(MatchmakingService.Services.Background.CompatibilityPrecomputeOptions.SectionName));
 builder.Services.AddHostedService<MatchmakingService.Services.Background.CompatibilityPrecomputeService>();
 builder.Services.AddScoped<MatchmakingService.Services.DesirabilityCalculator>();
+builder.Services.AddSingleton<MatchmakingService.Services.IReputationScoreCache, MatchmakingService.Services.ReputationScoreCache>();
 builder.Services.AddScoped<MatchmakingService.Services.ICompatibilityScorer, MatchmakingService.Services.CompatibilityScorer>();
 builder.Services.AddScoped<MatchmakingService.Services.IRadarProfileCalculator, MatchmakingService.Services.RadarProfileCalculator>();
 builder.Services.AddScoped<MatchmakingService.Services.RadarProfileCalculator>();
@@ -218,6 +224,13 @@ builder.Services.AddHttpClient<ISafetyServiceClient, SafetyServiceClient>(client
 
 
 builder.Services.AddHttpClient<ISwipeServiceClient, SwipeServiceClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
+})
+.AddHttpMessageHandler<InternalApiKeyAuthHandler>();
+
+// Reputation service client (no interface needed, used via cache)
+builder.Services.AddHttpClient("ReputationService", client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
 })

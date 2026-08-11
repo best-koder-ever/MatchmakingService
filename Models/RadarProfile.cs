@@ -21,5 +21,8 @@ public class RadarProfile
     /// <summary>0-1 confidence based on data sources available.</summary>
     public double Confidence { get; set; }
 
+    /// <summary>JSON: previous 7-axis values before last update (for before/after comparison).</summary>
+    public string? PreviousValuesJson { get; set; }
+
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

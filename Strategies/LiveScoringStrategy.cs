@@ -28,6 +28,7 @@ public class LiveScoringStrategy : ICandidateStrategy
     private readonly IAdvancedMatchingService _matchingService;
     private readonly ISwipeServiceClient _swipeServiceClient;
     private readonly ISafetyServiceClient _safetyServiceClient;
+    private readonly IReputationScoreCache _reputationCache;
     private readonly IUserProfileSyncService? _userProfileSync;
     private readonly IOptionsMonitor<CandidateOptions> _options;
     private readonly IOptionsMonitor<ScoringConfiguration> _scoringConfig;
@@ -39,6 +40,7 @@ public class LiveScoringStrategy : ICandidateStrategy
         IAdvancedMatchingService matchingService,
         ISwipeServiceClient swipeServiceClient,
         ISafetyServiceClient safetyServiceClient,
+        IReputationScoreCache reputationCache,
         IOptionsMonitor<CandidateOptions> options,
         IOptionsMonitor<ScoringConfiguration> scoringConfig,
         ILogger<LiveScoringStrategy> logger,
@@ -49,6 +51,7 @@ public class LiveScoringStrategy : ICandidateStrategy
         _matchingService = matchingService;
         _swipeServiceClient = swipeServiceClient;
         _safetyServiceClient = safetyServiceClient;
+        _reputationCache = reputationCache;
         _options = options;
         _scoringConfig = scoringConfig;
         _logger = logger;
@@ -144,6 +147,23 @@ public class LiveScoringStrategy : ICandidateStrategy
             var candidateTrustScore = trustScores.GetValueOrDefault(candidate.UserId, 100m);
             var trustMultiplier = 0.5 + ((double)candidateTrustScore / 200.0);
             finalScore *= trustMultiplier;
+
+            // Reputation shadow-restrict (same pattern as trust score):
+            // reputationFactor = 0.5 + (reputationScore / 200)
+            // Rep 0   => 0.5x (demoted but visible)
+            // Rep 50  => 0.75x
+            // Rep 100 => 1.0x (full visibility)
+            var repScore = _reputationCache.GetScore(candidate.UserId);
+            var repFactor = 0.5 + (repScore / 200.0);
+            finalScore *= repFactor;
+
+            // Exclude banned or below-floor users entirely
+            if (_reputationCache.IsExcluded(candidate.UserId.ToString()))
+            {
+                _logger.LogDebug("Excluding candidate {CandidateId} due to low reputation ({Rep})",
+                    candidate.UserId, repScore);
+                continue;
+            }
 
             // Flavor preference: boost same-flavor candidates by 10%
             if (!string.IsNullOrEmpty(user.FlavorId) && 

@@ -15,6 +15,7 @@ public class PreComputedStrategyTests : IDisposable
     private readonly MatchmakingDbContext _context;
     private readonly Mock<ISwipeServiceClient> _swipeClientMock;
     private readonly Mock<ISafetyServiceClient> _safetyClientMock;
+        private readonly Mock<IReputationScoreCache> _reputationCacheMock;
     private readonly Mock<IOptionsMonitor<CandidateOptions>> _optionsMock;
     private readonly Mock<IOptionsMonitor<ScoringConfiguration>> _scoringConfigMock;
     private readonly Mock<IAdvancedMatchingService> _matchingServiceMock;
@@ -29,6 +30,7 @@ public class PreComputedStrategyTests : IDisposable
 
         _swipeClientMock = new Mock<ISwipeServiceClient>();
         _safetyClientMock = new Mock<ISafetyServiceClient>();
+            _reputationCacheMock = new Mock<IReputationScoreCache>();
         _matchingServiceMock = new Mock<IAdvancedMatchingService>();
 
         _optionsMock = new Mock<IOptionsMonitor<CandidateOptions>>();
@@ -71,6 +73,7 @@ public class PreComputedStrategyTests : IDisposable
             _matchingServiceMock.Object,
             _swipeClientMock.Object,
             _safetyClientMock.Object,
+            _reputationCacheMock.Object,
             _optionsMock.Object,
             _scoringConfigMock.Object,
             NullLogger<LiveScoringStrategy>.Instance);

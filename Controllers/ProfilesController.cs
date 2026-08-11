@@ -1,6 +1,7 @@
 using MatchmakingService.Data;
 using Microsoft.EntityFrameworkCore;
 using MatchmakingService.Models;
+using MatchmakingService.Services;
 using MatchmakingService.Strategies;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -16,27 +17,30 @@ namespace MatchmakingService.Controllers
         private readonly IConfiguration _configuration;
         private readonly ILogger<ProfilesController> _logger;
         private readonly MatchmakingDbContext _db;
+        private readonly VideoServiceClient? _videoService;
 
-        public ProfilesController(
-            StrategyResolver strategyResolver,
-            IHttpClientFactory httpClientFactory,
-            IConfiguration configuration,
-            ILogger<ProfilesController> logger,
-            MatchmakingDbContext db)
-        {
-            _strategyResolver = strategyResolver;
-            _httpClientFactory = httpClientFactory;
-            _configuration = configuration;
-            _logger = logger;
-            _db = db;
-        }
+    public ProfilesController(
+        StrategyResolver strategyResolver,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        ILogger<ProfilesController> logger,
+        MatchmakingDbContext db,
+        VideoServiceClient? videoService = null)
+    {
+        _strategyResolver = strategyResolver;
+        _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
+        _logger = logger;
+        _db = db;
+        _videoService = videoService;
+    }
 
-        /// <summary>
-        /// GET /api/matchmaking/profiles/{userId}
-        /// Returns scored, filtered, ranked candidate profiles for the Discover screen.
-        /// T179: Strategy-backed. T180: Optional query params.
-        /// </summary>
-        [HttpGet("profiles/{userId}")]
+    /// <summary>
+    /// GET /api/matchmaking/profiles/{userId}
+    /// Returns scored, filtered, ranked candidate profiles for the Discover screen.
+    /// T179: Strategy-backed. T180: Optional query params.
+    /// </summary>
+    [HttpGet("profiles/{userId}")]
         public async Task<IActionResult> GetProfiles(
             string userId,
             [FromQuery] int? limit = null,
@@ -80,7 +84,21 @@ namespace MatchmakingService.Controllers
                 // Enrich scored candidates with full profile data from UserService
                 var enrichment = await FetchUserProfilesAsync(result.Candidates.Select(c => c.Profile.UserId).ToList());
 
-                var response = result.Candidates.Select(c => MapToFlutterShape(c, enrichment)).ToList();
+                // Fetch profile video URLs from video-service
+                var keycloakIds = result.Candidates
+                    .Select(c => _db.UserProfiles.FirstOrDefault(p => p.Id == c.Profile.UserId)?.KeycloakId)
+                    .Where(id => id != null)
+                    .Select(id => id!)
+                    .Distinct()
+                    .ToList();
+                var videoUrls = new Dictionary<string, string?>();
+                if (keycloakIds.Count > 0 && _videoService != null)
+                {
+                    var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+                    videoUrls = await _videoService.GetProfileVideoUrlsAsync(keycloakIds, authHeader);
+                }
+
+                var response = result.Candidates.Select(c => MapToFlutterShape(c, enrichment, videoUrls)).ToList();
 
                 _logger.LogInformation(
                     "Returning {Count} candidates for user {UserId} via {Strategy} in {Ms}ms",
@@ -150,10 +168,15 @@ namespace MatchmakingService.Controllers
         /// Flutter MatchCandidate.fromJson reads: userId, displayName, age, bio,
         /// city, photoUrl, photoUrls, compatibility/compatibilityScore, interests, etc.
         /// </summary>
-        private static object MapToFlutterShape(ScoredCandidate scored, Dictionary<int, JsonElement> enrichment)
+        private static object MapToFlutterShape(ScoredCandidate scored, Dictionary<int, JsonElement> enrichment, Dictionary<string, string?> videoUrls)
         {
             var p = scored.Profile;
             enrichment.TryGetValue(p.UserId, out var userProfile);
+
+            // Resolve video URL: look up keycloakId → video URL
+            string? profileVideoUrl = null;
+            if (p.KeycloakId != null && videoUrls.TryGetValue(p.KeycloakId, out var vu))
+                profileVideoUrl = vu;
 
             return new
             {
@@ -175,6 +198,7 @@ namespace MatchmakingService.Controllers
                 isVerified = p.IsVerified,
                 photoUrl = GetStringProp(userProfile, "primaryPhotoUrl"),
                 photoUrls = GetStringArrayProp(userProfile, "photoUrls"),
+                profileVideoUrl = profileVideoUrl,
                 prompts = Array.Empty<object>(),
                 voicePromptUrl = (string?)null,
                 occupation = GetStringProp(userProfile, "occupation"),

@@ -287,6 +287,36 @@ namespace MatchmakingService.Controllers
             }
         }
 
+        // GET: Top picks for the user (daily curated)
+        [HttpGet("top-picks/{userId}")]
+        public async Task<IActionResult> GetTopPicks(int userId)
+        {
+            try
+            {
+                var resolver = HttpContext.RequestServices
+                    .GetRequiredService<MatchmakingService.Strategies.StrategyResolver>();
+                var strategy = resolver.Resolve("dailypick");
+                var request = new MatchmakingService.Strategies.CandidateRequest(5, 0, null, false);
+                var result = await strategy.GetCandidatesAsync(userId, request);
+
+                return Ok(new
+                {
+                    topPicks = result.Candidates.Select(c => new
+                    {
+                        userId = c.Profile.UserId,
+                        age = c.Profile.Age,
+                        city = c.Profile.City,
+                        compatibilityScore = Math.Round(c.CompatibilityScore, 1),
+                    }).ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting top picks for user {UserId}", userId);
+                return StatusCode(500, new { error = "Failed to get top picks" });
+            }
+        }
+
         // GET: Retrieve matches for authenticated user (JWT-based, more RESTful)
         /// <summary>
         /// T001: New endpoint - Get matches for currently authenticated user

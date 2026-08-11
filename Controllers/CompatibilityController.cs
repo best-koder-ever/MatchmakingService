@@ -194,6 +194,9 @@ public class CompatibilityController : ControllerBase
             intimacyComfort    = p.IntimacyComfort,
             conflictStyle      = p.ConflictStyle
         },
+        previousAxes = p.PreviousValuesJson != null
+            ? (System.Text.Json.JsonElement?)System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(p.PreviousValuesJson)
+            : null,
         p.Confidence,
         p.UpdatedAt
     };

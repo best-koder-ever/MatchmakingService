@@ -91,7 +91,8 @@ public class ProfilesControllerTests : IDisposable
             _httpClientFactoryMock.Object,
             config,
             NullLogger<ProfilesController>.Instance,
-            _context);
+            _context,
+            null!);
 
         // Set up HttpContext with headers
         var httpContext = new DefaultHttpContext();
@@ -308,6 +309,7 @@ public class ProfilesControllerTests : IDisposable
             matchingService.Object,
             swipeClient.Object,
             safetyClient.Object,
+            Mock.Of<MatchmakingService.Services.IReputationScoreCache>(),
             _optionsMock.Object,
             scoringConfig.Object,
             NullLogger<LiveScoringStrategy>.Instance);

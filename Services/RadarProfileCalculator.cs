@@ -96,6 +96,9 @@ public class RadarProfileCalculator : IRadarProfileCalculator
         var existing = await _db.RadarProfiles.FirstOrDefaultAsync(r => r.KeycloakId == keycloakId, ct);
         if (existing != null)
         {
+            // Save current values as previous (for before/after comparison)
+            existing.PreviousValuesJson = $"{{\"emotionalStability\":{existing.EmotionalStability},\"socialEnergy\":{existing.SocialEnergy},\"openness\":{existing.Openness},\"warmth\":{existing.Warmth},\"lifeStructure\":{existing.LifeStructure},\"intimacyComfort\":{existing.IntimacyComfort},\"conflictStyle\":{existing.ConflictStyle}}}";
+
             existing.EmotionalStability = profile.EmotionalStability;
             existing.SocialEnergy       = profile.SocialEnergy;
             existing.Openness           = profile.Openness;
