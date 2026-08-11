@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Net.Http;
+using System.Security.Claims;
 using MatchmakingService.Models;
 using MatchmakingService.Services;
 using MatchmakingService.Metrics;
@@ -27,6 +28,7 @@ namespace MatchmakingService.Controllers
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _configuration;
         private readonly MatchmakingServiceMetrics? _metrics;
+        private readonly IMatchInsightService? _matchInsightService;
 
         public MatchmakingController(
             IUserServiceClient userServiceClient,
@@ -38,7 +40,8 @@ namespace MatchmakingService.Controllers
             ILogger<MatchmakingController> logger,
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
-            MatchmakingServiceMetrics? metrics = null)
+            MatchmakingServiceMetrics? metrics = null,
+            IMatchInsightService? matchInsightService = null)
         {
             _userServiceClient = userServiceClient;
             _matchmakingService = matchmakingService;
@@ -50,6 +53,7 @@ namespace MatchmakingService.Controllers
             _httpClientFactory = httpClientFactory;
             _configuration = configuration;
             _metrics = metrics;
+            _matchInsightService = matchInsightService;
         }
 
         // POST: Handle mutual match notifications from SwipeService
@@ -110,6 +114,13 @@ namespace MatchmakingService.Controllers
                 _context.Matches.Add(match);
                 await _context.SaveChangesAsync();
                 _metrics?.MatchCreated();
+
+                // T532 (spec 005): generate per-user MatchInsight rows for "Why You Matched" card.
+                // Soft enrichment — service swallows errors and is no-op when not registered.
+                if (_matchInsightService != null)
+                {
+                    await _matchInsightService.GenerateForMatchAsync(match.Id, user1, user2, compatibilityScore);
+                }
 
                 // Send match notifications to both users
                 await _notificationService.NotifyMatchAsync(request.User1Id, request.User2Id, match.Id);
@@ -273,6 +284,36 @@ namespace MatchmakingService.Controllers
             {
                 _logger.LogError(ex, $"Error calculating compatibility between users {userId} and {targetUserId}");
                 return StatusCode(500, "Error calculating compatibility");
+            }
+        }
+
+        // GET: Top picks for the user (daily curated)
+        [HttpGet("top-picks/{userId}")]
+        public async Task<IActionResult> GetTopPicks(int userId)
+        {
+            try
+            {
+                var resolver = HttpContext.RequestServices
+                    .GetRequiredService<MatchmakingService.Strategies.StrategyResolver>();
+                var strategy = resolver.Resolve("dailypick");
+                var request = new MatchmakingService.Strategies.CandidateRequest(5, 0, null, false);
+                var result = await strategy.GetCandidatesAsync(userId, request);
+
+                return Ok(new
+                {
+                    topPicks = result.Candidates.Select(c => new
+                    {
+                        userId = c.Profile.UserId,
+                        age = c.Profile.Age,
+                        city = c.Profile.City,
+                        compatibilityScore = Math.Round(c.CompatibilityScore, 1),
+                    }).ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting top picks for user {UserId}", userId);
+                return StatusCode(500, new { error = "Failed to get top picks" });
             }
         }
 
@@ -668,6 +709,85 @@ namespace MatchmakingService.Controllers
             }
         }
 
+        // T534 (spec 005): "Why You Matched" insight card — tiered response.
+        // Free tier: overall score + top 2 reasons. Premium (future): full 4-section card.
+        [HttpGet("matches/{matchId}/insight")]
+        [Authorize]
+        public async Task<IActionResult> GetMatchInsight(int matchId)
+        {
+            if (matchId <= 0) return BadRequest("Invalid match ID");
+
+            var keycloakId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                          ?? User.FindFirstValue("sub");
+            if (string.IsNullOrEmpty(keycloakId)) return Unauthorized();
+
+            // Verify the caller is part of this match before exposing any insight.
+            var profile = await _context.UserProfiles
+                .Where(p => p.KeycloakId == keycloakId)
+                .Select(p => new { p.UserId })
+                .FirstOrDefaultAsync();
+            if (profile == null) return NotFound("Profile not found");
+
+            var match = await _context.Matches
+                .Where(m => m.Id == matchId && (m.User1Id == profile.UserId || m.User2Id == profile.UserId))
+                .FirstOrDefaultAsync();
+            if (match == null) return NotFound("Match not found");
+
+            var insight = await _context.MatchInsights
+                .Where(mi => mi.MatchId == matchId && mi.ForKeycloakId == keycloakId)
+                .FirstOrDefaultAsync();
+            if (insight == null)
+            {
+                // No insight generated (e.g. one side hasn't onboarded, or pre-T532 match).
+                return Ok(new
+                {
+                    matchId,
+                    overallScore = Math.Round(match.CompatibilityScore, 1),
+                    reasons = Array.Empty<string>(),
+                    frictions = Array.Empty<string>(),
+                    connectionHook = (object?)null,
+                    connectionSignals = Array.Empty<object>(),
+                    confidenceLevel = "InsufficientData",
+                    tier = "free",
+                    available = false,
+                });
+            }
+
+            string[] reasons;
+            string[] frictions;
+            try
+            {
+                reasons = JsonSerializer.Deserialize<string[]>(insight.ReasonsJson) ?? Array.Empty<string>();
+                frictions = JsonSerializer.Deserialize<string[]>(insight.FrictionJson) ?? Array.Empty<string>();
+            }
+            catch (JsonException)
+            {
+                reasons = Array.Empty<string>();
+                frictions = Array.Empty<string>();
+            }
+
+            // Tiered: free users see overall score + top 2 reasons.
+            // Premium gate is a placeholder until T570+ wires entitlements.
+            bool isPremium = User.HasClaim("tier", "premium");
+
+            return Ok(new
+            {
+                matchId,
+                overallScore = Math.Round(insight.OverallScore, 1),
+                reasons = isPremium ? reasons : reasons.Take(2).ToArray(),
+                frictions = isPremium ? frictions : Array.Empty<string>(),
+                connectionHook = insight.ConnectionHookJson != null
+                    ? JsonSerializer.Deserialize<object>(insight.ConnectionHookJson)
+                    : null,
+                connectionSignals = insight.ConnectionSignalsJson != null
+                    ? JsonSerializer.Deserialize<object[]>(insight.ConnectionSignalsJson)
+                    : Array.Empty<object>(),
+                confidenceLevel = insight.ConfidenceLevel ?? "InsufficientData",
+                tier = isPremium ? "premium" : "free",
+                available = true,
+            });
+        }
+
         // POST: Unmatch by match ID with reason tracking (preferred method)
         [HttpPost("matches/{matchId}/unmatch")]
         public async Task<IActionResult> UnmatchByMatchId(int matchId, [FromBody] UnmatchRequest request)
@@ -851,5 +971,54 @@ namespace MatchmakingService.Controllers
                 return StatusCode(500, "An error occurred while deleting user matches");
             }
         }
+        // Dev: Regenerate connection insight for a match (T540+).
+        // Available in Development and Demo environments.
+        [HttpPost("matches/{matchId}/regenerate-insight")]
+        [Authorize]
+        public async Task<IActionResult> RegenerateInsight(int matchId)
+        {
+            var env = _configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") ?? "Production";
+            if (env != "Development" && env != "Demo")
+                return NotFound();
+
+            var match = await _context.Matches.FindAsync(matchId);
+            if (match == null) return NotFound("Match not found");
+
+            if (_matchInsightService != null)
+            {
+                await _matchInsightService.GenerateForMatchAsync(
+                    match.Id, match.User1Id, match.User2Id, match.CompatibilityScore);
+            }
+
+            return Ok(new { regenerated = true, matchId });
+        }
+
+        // Dev: Regenerate connection insight for ALL active matches (T540+).
+        [HttpPost("matches/regenerate-all-insights")]
+        [Authorize]
+        public async Task<IActionResult> RegenerateAllInsights()
+        {
+            var env = _configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") ?? "Production";
+            if (env != "Development" && env != "Demo")
+                return NotFound();
+
+            var matches = await _context.Matches
+                .Where(m => m.IsActive)
+                .ToListAsync();
+
+            var count = 0;
+            foreach (var match in matches)
+            {
+                if (_matchInsightService != null)
+                {
+                    await _matchInsightService.GenerateForMatchAsync(
+                        match.Id, match.User1Id, match.User2Id, match.CompatibilityScore);
+                    count++;
+                }
+            }
+
+            return Ok(new { regenerated = count });
+        }
+
     }
 }

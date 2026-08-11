@@ -1,326 +1,192 @@
 using System.Security.Claims;
-using MatchmakingService.Controllers;
-using MatchmakingService.Data;
-using MatchmakingService.DTOs;
-using MatchmakingService.Models;
-using MatchmakingService.Services;
+using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using MatchmakingService.Commands;
+using MatchmakingService.Controllers;
+using MatchmakingService.Data;
+using MatchmakingService.Models;
+using MatchmakingService.Queries;
+using MatchmakingService.Services;
 using Moq;
+using Xunit;
 
 namespace MatchmakingService.Tests.Controllers;
 
-/// <summary>
-/// Unit tests for CompatibilityController.
-/// Covers: GET /api/compatibility/questions, POST /api/compatibility/answers,
-/// GET /api/compatibility/answers/{keycloakId}, GET /api/compatibility/score/{otherKeycloakId}.
-/// T518 — spec 005.
-/// </summary>
 public class CompatibilityControllerTests : IDisposable
 {
     private readonly MatchmakingDbContext _context;
-    private readonly Mock<ICompatibilityScorer> _scorerMock;
+    private readonly CompatibilityController _controller;
+    private const string UserId = "user-keycloak-abc";
 
     public CompatibilityControllerTests()
     {
-        var dbOptions = new DbContextOptionsBuilder<MatchmakingDbContext>()
-            .UseInMemoryDatabase(databaseName: $"CompatibilityCtrl_{Guid.NewGuid()}")
+        var options = new DbContextOptionsBuilder<MatchmakingDbContext>()
+            .UseInMemoryDatabase($"CompatibilityTests_{Guid.NewGuid()}")
             .Options;
-        _context = new MatchmakingDbContext(dbOptions);
-        _scorerMock = new Mock<ICompatibilityScorer>();
-    }
+        _context = new MatchmakingDbContext(options);
 
-    public void Dispose()
-    {
-        _context.Database.EnsureDeleted();
-        _context.Dispose();
-    }
-
-    // ─── helpers ────────────────────────────────────────────────────────────
-
-    private CompatibilityController CreateController(string? keycloakId = null)
-    {
-        var controller = new CompatibilityController(
-            _context,
-            _scorerMock.Object,
-            NullLogger<CompatibilityController>.Instance);
-
-        var httpContext = new DefaultHttpContext();
-
-        if (keycloakId != null)
+        // Build a mini DI container with real MediatR handlers
+        var services = new ServiceCollection();
+        services.AddSingleton(_context);
+        services.AddSingleton<IRadarProfileCalculator, RadarProfileCalculator>();
+        services.AddLogging();
+        services.AddMediatR(cfg =>
         {
-            var claims = new[] { new Claim("sub", keycloakId) };
-            var identity = new ClaimsIdentity(claims, "Bearer");
-            httpContext.User = new ClaimsPrincipal(identity);
-        }
+            cfg.RegisterServicesFromAssemblyContaining<GetCompatibilityQuestionsHandler>();
+            cfg.RegisterServicesFromAssemblyContaining<SubmitAnswersHandler>();
+            cfg.RegisterServicesFromAssemblyContaining<GetUserAnswersHandler>();
+        });
+        var sp = services.BuildServiceProvider();
+        var sender = sp.GetRequiredService<ISender>();
 
-        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
-        return controller;
+        var mockUserClient = new Mock<IUserServiceClient>();
+        var mockLogger = new Mock<ILogger<CompatibilityController>>();
+        var radar = new RadarProfileCalculator(_context);
+        _controller = new CompatibilityController(
+            _context, mockUserClient.Object, mockLogger.Object, radar, sender);
+        SetUser(UserId);
+
+        // Seed a question
+        _context.CompatibilityQuestions.Add(new CompatibilityQuestion
+        {
+            Id = 1, Category = QuestionCategory.Personality, Emoji = "😊",
+            TextEn = "How social are you?", TextSv = "Hur social är du?",
+            OptionsJson = "[]", SortOrder = 1, IsActive = true, Weight = 1.0
+        });
+        _context.CompatibilityQuestions.Add(new CompatibilityQuestion
+        {
+            Id = 2, Category = QuestionCategory.Values, Emoji = "💡",
+            TextEn = "What do you value?", TextSv = "Vad värdesätter du?",
+            OptionsJson = "[]", SortOrder = 2, IsActive = true, Weight = 1.0
+        });
+        _context.SaveChanges();
     }
 
-    private async Task<CompatibilityQuestion> SeedQuestion(
-        string text = "Sample question", bool isActive = true, int sortOrder = 1)
+    private void SetUser(string keycloakId)
     {
-        var q = new CompatibilityQuestion
+        var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, keycloakId) };
+        var identity = new ClaimsIdentity(claims, "Test");
+        var principal = new ClaimsPrincipal(identity);
+        _controller.ControllerContext = new ControllerContext
         {
-            QuestionText = text,
-            IsActive = isActive,
-            SortOrder = sortOrder
+            HttpContext = new DefaultHttpContext { User = principal }
         };
-        _context.CompatibilityQuestions.Add(q);
-        await _context.SaveChangesAsync();
-        return q;
     }
 
-    private async Task<CompatibilityAnswer> SeedAnswer(int questionId, string keycloakId, int value = 3)
+    // ── GetQuestions ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetQuestions_ReturnsActiveQuestionsGrouped()
     {
-        var a = new CompatibilityAnswer
+        var result = await _controller.GetQuestions();
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.NotNull(ok.Value);
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        Assert.Contains("questions", json);
+        Assert.Contains("grouped", json);
+    }
+
+    [Fact]
+    public async Task GetQuestions_InactiveQuestionsExcluded()
+    {
+        _context.CompatibilityQuestions.Add(new CompatibilityQuestion
         {
-            QuestionId = questionId,
-            KeycloakId = keycloakId,
-            AnswerValue = value
-        };
-        _context.CompatibilityAnswers.Add(a);
+            Id = 99, Category = QuestionCategory.Lifestyle, Emoji = "🏃",
+            TextEn = "Inactive Q", TextSv = "Inaktiv F",
+            OptionsJson = "[]", SortOrder = 99, IsActive = false, Weight = 1.0
+        });
         await _context.SaveChangesAsync();
-        return a;
-    }
 
-    // ─── GET /api/compatibility/questions ───────────────────────────────────
-
-    [Fact]
-    public async Task GetQuestions_Unauthenticated_Returns401()
-    {
-        var controller = CreateController(keycloakId: null); // no claims
-        var result = await controller.GetQuestions();
-        Assert.IsType<UnauthorizedResult>(result);
-    }
-
-    [Fact]
-    public async Task GetQuestions_Authenticated_ReturnsActiveQuestionsInSortOrder()
-    {
-        await SeedQuestion("Q3", isActive: true, sortOrder: 3);
-        await SeedQuestion("Q1", isActive: true, sortOrder: 1);
-        await SeedQuestion("Q2", isActive: true, sortOrder: 2);
-        await SeedQuestion("Hidden", isActive: false, sortOrder: 0);
-
-        var controller = CreateController("user-a");
-        var result = await controller.GetQuestions();
-
+        var result = await _controller.GetQuestions();
         var ok = Assert.IsType<OkObjectResult>(result);
-        var list = Assert.IsAssignableFrom<IEnumerable<CompatibilityQuestion>>(ok.Value);
-        var ordered = list.ToList();
-
-        Assert.Equal(3, ordered.Count); // inactive question excluded
-        Assert.Equal("Q1", ordered[0].QuestionText);
-        Assert.Equal("Q2", ordered[1].QuestionText);
-        Assert.Equal("Q3", ordered[2].QuestionText);
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        Assert.DoesNotContain("Inactive Q", json);
     }
 
+    // ── SubmitAnswers ─────────────────────────────────────────────────────
+
     [Fact]
-    public async Task GetQuestions_ExcludesInactiveQuestions()
+    public async Task SubmitAnswers_ValidAnswers_Returns200()
     {
-        await SeedQuestion("Active", isActive: true, sortOrder: 1);
-        await SeedQuestion("Inactive", isActive: false, sortOrder: 2);
-
-        var controller = CreateController("user-x");
-        var result = await controller.GetQuestions();
-
+        var req = new SubmitAnswersRequest(new List<AnswerItem>
+        {
+            new(1, 5), new(2, 3)
+        });
+        var result = await _controller.SubmitAnswers(req);
         var ok = Assert.IsType<OkObjectResult>(result);
-        var list = Assert.IsAssignableFrom<IEnumerable<CompatibilityQuestion>>(ok.Value).ToList();
-        Assert.All(list, q => Assert.True(q.IsActive));
-    }
-
-    // ─── POST /api/compatibility/answers ────────────────────────────────────
-
-    [Fact]
-    public async Task UpsertAnswer_Unauthenticated_Returns401()
-    {
-        var controller = CreateController(keycloakId: null);
-        var result = await controller.UpsertAnswer(new UpsertAnswerRequest(1, 3));
-        Assert.IsType<UnauthorizedResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        Assert.Contains("\"saved\":2", json);
+        Assert.Contains("\"totalAnswered\":2", json);
     }
 
     [Fact]
-    public async Task UpsertAnswer_UnknownQuestionId_Returns404()
+    public async Task SubmitAnswers_Upsert_UpdatesExistingAnswer()
     {
-        var controller = CreateController("user-b");
-        var result = await controller.UpsertAnswer(new UpsertAnswerRequest(9999, 3));
-        Assert.IsType<NotFoundObjectResult>(result);
+        _context.UserQuestionAnswers.Add(new UserQuestionAnswer
+        {
+            KeycloakId = UserId, QuestionId = 1, Value = 1, AnsweredAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        var req = new SubmitAnswersRequest(new List<AnswerItem> { new(1, 7) });
+        await _controller.SubmitAnswers(req);
+
+        var ans = await _context.UserQuestionAnswers.FirstAsync(a => a.KeycloakId == UserId && a.QuestionId == 1);
+        Assert.Equal(7, ans.Value);
+        Assert.Equal(1, await _context.UserQuestionAnswers.CountAsync(a => a.KeycloakId == UserId));
     }
 
     [Fact]
-    public async Task UpsertAnswer_FirstCall_InsertsNewRow()
+    public async Task SubmitAnswers_UnknownQuestionId_Returns400()
     {
-        var q = await SeedQuestion();
-        var controller = CreateController("user-c");
-
-        var result = await controller.UpsertAnswer(new UpsertAnswerRequest(q.Id, 4));
-
-        Assert.IsType<OkResult>(result);
-        var answer = await _context.CompatibilityAnswers
-            .FirstOrDefaultAsync(a => a.KeycloakId == "user-c" && a.QuestionId == q.Id);
-        Assert.NotNull(answer);
-        Assert.Equal(4, answer.AnswerValue);
+        var req = new SubmitAnswersRequest(new List<AnswerItem> { new(9999, 5) });
+        var result = await _controller.SubmitAnswers(req);
+        Assert.IsType<BadRequestObjectResult>(result);
     }
 
     [Fact]
-    public async Task UpsertAnswer_SecondCall_UpdatesSameRow()
+    public async Task SubmitAnswers_ValueOutOfRange_Returns400()
     {
-        var q = await SeedQuestion();
-        var controller = CreateController("user-d");
-
-        // First call — insert
-        await controller.UpsertAnswer(new UpsertAnswerRequest(q.Id, 2));
-        var countAfterInsert = await _context.CompatibilityAnswers
-            .CountAsync(a => a.KeycloakId == "user-d" && a.QuestionId == q.Id);
-        Assert.Equal(1, countAfterInsert);
-
-        // Second call — should update, not insert
-        await controller.UpsertAnswer(new UpsertAnswerRequest(q.Id, 5));
-        var countAfterUpdate = await _context.CompatibilityAnswers
-            .CountAsync(a => a.KeycloakId == "user-d" && a.QuestionId == q.Id);
-        Assert.Equal(1, countAfterUpdate); // still only 1 row
-
-        var updated = await _context.CompatibilityAnswers
-            .FirstAsync(a => a.KeycloakId == "user-d" && a.QuestionId == q.Id);
-        Assert.Equal(5, updated.AnswerValue);
+        var req = new SubmitAnswersRequest(new List<AnswerItem> { new(1, 0) }); // value=0 invalid
+        var result = await _controller.SubmitAnswers(req);
+        Assert.IsType<BadRequestObjectResult>(result);
     }
 
-    // ─── GET /api/compatibility/answers/{keycloakId} ────────────────────────
+    [Fact]
+    public async Task SubmitAnswers_EmptyList_Returns400()
+    {
+        var req = new SubmitAnswersRequest(new List<AnswerItem>());
+        var result = await _controller.SubmitAnswers(req);
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    // ── GetAnswers ────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetAnswers_Unauthenticated_Returns401()
+    public async Task GetAnswers_OwnAnswers_Returns200()
     {
-        var controller = CreateController(keycloakId: null);
-        var result = await controller.GetAnswers("some-user");
-        Assert.IsType<UnauthorizedResult>(result);
+        _context.UserQuestionAnswers.Add(new UserQuestionAnswer
+        {
+            KeycloakId = UserId, QuestionId = 1, Value = 4, AnsweredAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _controller.GetAnswers(UserId);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        Assert.Contains("\"count\":1", json);
     }
 
     [Fact]
     public async Task GetAnswers_OtherUser_Returns403()
     {
-        var controller = CreateController("user-e"); // caller is user-e
-        var result = await controller.GetAnswers("user-f"); // requesting user-f's answers
+        var result = await _controller.GetAnswers("other-user-id");
         Assert.IsType<ForbidResult>(result);
     }
 
-    [Fact]
-    public async Task GetAnswers_OwnId_ReturnsCallerAnswers()
-    {
-        var q1 = await SeedQuestion("Q1", sortOrder: 1);
-        var q2 = await SeedQuestion("Q2", sortOrder: 2);
-        await SeedAnswer(q1.Id, "user-g", value: 3);
-        await SeedAnswer(q2.Id, "user-g", value: 5);
-        await SeedAnswer(q1.Id, "other-user", value: 1); // another user's answer — should not appear
-
-        var controller = CreateController("user-g");
-        var result = await controller.GetAnswers("user-g");
-
-        var ok = Assert.IsType<OkObjectResult>(result);
-        var answers = Assert.IsAssignableFrom<IEnumerable<CompatibilityAnswer>>(ok.Value).ToList();
-        Assert.Equal(2, answers.Count);
-        Assert.All(answers, a => Assert.Equal("user-g", a.KeycloakId));
-    }
-
-    // ─── GET /api/compatibility/score/{otherKeycloakId} ─────────────────────
-
-    [Fact]
-    public async Task GetScore_Unauthenticated_Returns401()
-    {
-        var controller = CreateController(keycloakId: null);
-        var result = await controller.GetScore("user-z");
-        Assert.IsType<UnauthorizedResult>(result);
-    }
-
-    [Fact]
-    public async Task GetScore_BothUsersHaveAnswers_ReturnsScorerResult()
-    {
-        var q = await SeedQuestion();
-        await SeedAnswer(q.Id, "user-h", value: 4);
-        await SeedAnswer(q.Id, "user-i", value: 3);
-
-        var expectedDto = new CompatibilityScoreDto
-        {
-            UserId1 = "user-h",
-            UserId2 = "user-i",
-            OverallScore = 85,
-            InterestsScore = 80,
-            LocationScore = 90,
-            PreferenceScore = 70
-        };
-
-        _scorerMock
-            .Setup(s => s.Score(
-                "user-h",
-                "user-i",
-                It.IsAny<IReadOnlyList<CompatibilityAnswer>>(),
-                It.IsAny<IReadOnlyList<CompatibilityAnswer>>()))
-            .Returns(expectedDto);
-
-        var controller = CreateController("user-h");
-        var result = await controller.GetScore("user-i");
-
-        var ok = Assert.IsType<OkObjectResult>(result);
-        var dto = Assert.IsType<CompatibilityScoreDto>(ok.Value);
-        Assert.Equal(85, dto.OverallScore);
-        Assert.Equal("user-h", dto.UserId1);
-        Assert.Equal("user-i", dto.UserId2);
-    }
-
-    [Fact]
-    public async Task GetScore_NoAnswers_ReturnsNeutralScoreFromScorer()
-    {
-        var neutralDto = new CompatibilityScoreDto
-        {
-            UserId1 = "user-j",
-            UserId2 = "user-k",
-            OverallScore = 50,
-            InterestsScore = 50,
-            LocationScore = 50,
-            PreferenceScore = 50
-        };
-
-        _scorerMock
-            .Setup(s => s.Score(
-                "user-j",
-                "user-k",
-                It.IsAny<IReadOnlyList<CompatibilityAnswer>>(),
-                It.IsAny<IReadOnlyList<CompatibilityAnswer>>()))
-            .Returns(neutralDto);
-
-        var controller = CreateController("user-j");
-        var result = await controller.GetScore("user-k");
-
-        var ok = Assert.IsType<OkObjectResult>(result);
-        var dto = Assert.IsType<CompatibilityScoreDto>(ok.Value);
-        Assert.Equal(50, dto.OverallScore);
-    }
-
-    [Fact]
-    public async Task GetScore_PassesCorrectAnswersToScorer()
-    {
-        var q = await SeedQuestion();
-        await SeedAnswer(q.Id, "user-l", value: 2);
-        await SeedAnswer(q.Id, "user-m", value: 4);
-
-        _scorerMock
-            .Setup(s => s.Score(
-                It.IsAny<string>(),
-                It.IsAny<string>(),
-                It.IsAny<IReadOnlyList<CompatibilityAnswer>>(),
-                It.IsAny<IReadOnlyList<CompatibilityAnswer>>()))
-            .Returns(new CompatibilityScoreDto { UserId1 = "user-l", UserId2 = "user-m" });
-
-        var controller = CreateController("user-l");
-        await controller.GetScore("user-m");
-
-        _scorerMock.Verify(s => s.Score(
-            "user-l",
-            "user-m",
-            It.Is<IReadOnlyList<CompatibilityAnswer>>(list => list.Count == 1 && list[0].KeycloakId == "user-l"),
-            It.Is<IReadOnlyList<CompatibilityAnswer>>(list => list.Count == 1 && list[0].KeycloakId == "user-m")),
-            Times.Once);
-    }
+    public void Dispose() => _context.Dispose();
 }

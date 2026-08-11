@@ -16,6 +16,7 @@ public class LiveScoringStrategyTests : IDisposable
     private readonly Mock<IAdvancedMatchingService> _matchingServiceMock;
     private readonly Mock<ISwipeServiceClient> _swipeClientMock;
     private readonly Mock<ISafetyServiceClient> _safetyClientMock;
+        private readonly Mock<IReputationScoreCache> _reputationCacheMock;
     private readonly Mock<IOptionsMonitor<CandidateOptions>> _optionsMock;
     private readonly Mock<IOptionsMonitor<ScoringConfiguration>> _scoringConfigMock;
     private readonly CandidateFilterPipeline _filterPipeline;
@@ -30,6 +31,7 @@ public class LiveScoringStrategyTests : IDisposable
         _matchingServiceMock = new Mock<IAdvancedMatchingService>();
         _swipeClientMock = new Mock<ISwipeServiceClient>();
         _safetyClientMock = new Mock<ISafetyServiceClient>();
+            _reputationCacheMock = new Mock<IReputationScoreCache>();
 
         _optionsMock = new Mock<IOptionsMonitor<CandidateOptions>>();
         _optionsMock.Setup(x => x.CurrentValue).Returns(new CandidateOptions());
@@ -53,6 +55,13 @@ public class LiveScoringStrategyTests : IDisposable
         _matchingServiceMock.Setup(x => x.CalculateCompatibilityScoreAsync(It.IsAny<int>(), It.IsAny<int>()))
             .ReturnsAsync(80.0);
 
+        // Default reputation: max score (no demotion in tests)
+        _reputationCacheMock = new Mock<IReputationScoreCache>();
+        _reputationCacheMock.Setup(x => x.GetScore(It.IsAny<int>())).Returns(100);
+        _reputationCacheMock.Setup(x => x.GetScore(It.IsAny<string>())).Returns(100);
+        _reputationCacheMock.Setup(x => x.IsExcluded(It.IsAny<string>())).Returns(false);
+        _reputationCacheMock.Setup(x => x.IsBanned(It.IsAny<string>())).Returns(false);
+
         // Use no filters in pipeline (test scoring logic in isolation)
         _filterPipeline = new CandidateFilterPipeline(
             new ICandidateFilter[] { new MatchmakingService.Filters.SelfExclusionFilter() },
@@ -73,6 +82,7 @@ public class LiveScoringStrategyTests : IDisposable
             _matchingServiceMock.Object,
             _swipeClientMock.Object,
             _safetyClientMock.Object,
+            _reputationCacheMock.Object,
             _optionsMock.Object,
             _scoringConfigMock.Object,
             NullLogger<LiveScoringStrategy>.Instance);
@@ -381,6 +391,7 @@ public class LiveScoringStrategyTests : IDisposable
             _matchingServiceMock.Object,
             _swipeClientMock.Object,
             _safetyClientMock.Object,
+            _reputationCacheMock.Object,
             _optionsMock.Object,
             _scoringConfigMock.Object,
             NullLogger<LiveScoringStrategy>.Instance);

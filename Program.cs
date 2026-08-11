@@ -133,8 +133,16 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<MatchmakingService.Services.MatchmakingService>();
 builder.Services.AddScoped<IAdvancedMatchingService, AdvancedMatchingService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// MediatR — register all handlers in this assembly (T512)
+builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 builder.Services.AddScoped<IHealthMetricsService, HealthMetricsService>();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient<VideoServiceClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://localhost:8080");
+    client.Timeout = TimeSpan.FromSeconds(3);
+});
 
 // Register scoring configuration with hot-reload support
 builder.Services.Configure<MatchmakingService.Models.ScoringConfiguration>(
@@ -187,7 +195,20 @@ builder.Services.AddScoped<MatchmakingService.Strategies.DailyPickStrategy>();
 // Phase 14.5: Background scoring service
 builder.Services.AddHostedService<MatchmakingService.Services.Background.ScoreRefreshBackgroundService>();
 builder.Services.AddHostedService<MatchmakingService.Services.Background.DailyPickGenerationService>();
+// T524 (spec 005): Pre-compute pairwise compatibility scores for users who have answered questions
+builder.Services.Configure<MatchmakingService.Services.Background.CompatibilityPrecomputeOptions>(
+    builder.Configuration.GetSection(MatchmakingService.Services.Background.CompatibilityPrecomputeOptions.SectionName));
+builder.Services.AddHostedService<MatchmakingService.Services.Background.CompatibilityPrecomputeService>();
 builder.Services.AddScoped<MatchmakingService.Services.DesirabilityCalculator>();
+builder.Services.AddSingleton<MatchmakingService.Services.IReputationScoreCache, MatchmakingService.Services.ReputationScoreCache>();
+builder.Services.AddScoped<MatchmakingService.Services.ICompatibilityScorer, MatchmakingService.Services.CompatibilityScorer>();
+builder.Services.AddScoped<MatchmakingService.Services.IRadarProfileCalculator, MatchmakingService.Services.RadarProfileCalculator>();
+builder.Services.AddScoped<MatchmakingService.Services.RadarProfileCalculator>();
+builder.Services.AddScoped<MatchmakingService.Services.IMatchInsightService, MatchmakingService.Services.MatchInsightService>();
+builder.Services.AddScoped<MatchmakingService.Services.IPsychometricScorer, MatchmakingService.Services.PsychometricScorer>();
+builder.Services.AddScoped<MatchmakingService.Services.IPsychometricProfileService, MatchmakingService.Services.PsychometricProfileService>();
+builder.Services.AddScoped<MatchmakingService.Services.IConnectionInsightComposer, MatchmakingService.Services.ConnectionInsightComposer>();
+builder.Services.AddScoped<MatchmakingService.Services.IUserProfileSyncService, MatchmakingService.Services.UserProfileSyncService>();
 
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>(client =>
 {
@@ -203,6 +224,13 @@ builder.Services.AddHttpClient<ISafetyServiceClient, SafetyServiceClient>(client
 
 
 builder.Services.AddHttpClient<ISwipeServiceClient, SwipeServiceClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
+})
+.AddHttpMessageHandler<InternalApiKeyAuthHandler>();
+
+// Reputation service client (no interface needed, used via cache)
+builder.Services.AddHttpClient("ReputationService", client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://dejting-yarp:8080");
 })
@@ -245,6 +273,28 @@ builder.Services.AddOpenTelemetry()
 // Register injectable business metrics
 builder.Services.AddSingleton<MatchmakingService.Metrics.MatchmakingServiceMetrics>();
 
+// CORS: config-driven origins — AllowAnyOrigin in dev, restricted in staging/production
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        if (allowedOrigins != null && allowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
+    });
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -254,6 +304,7 @@ using (var scope = app.Services.CreateScope())
     {
         dbContext.Database.Migrate();
     }
+    await MatchmakingService.Data.SeedData.CompatibilityQuestionSeed.SeedAsync(dbContext);
 }
 
 if (app.Environment.IsDevelopment())
@@ -265,6 +316,7 @@ if (app.Environment.IsDevelopment())
 if (!app.Environment.IsDevelopment()) { app.UseHttpsRedirection(); }
 
 app.UseCorrelationIds();
+app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 

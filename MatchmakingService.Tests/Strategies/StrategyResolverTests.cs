@@ -269,6 +269,7 @@ public class StrategyResolverTests : IDisposable
             matchingService.Object,
             swipeClient.Object,
             safetyClient.Object,
+            Mock.Of<MatchmakingService.Services.IReputationScoreCache>(),
             _optionsMock.Object,
             scoringConfig.Object,
             NullLogger<LiveScoringStrategy>.Instance);

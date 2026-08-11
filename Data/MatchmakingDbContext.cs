@@ -16,8 +16,12 @@ namespace MatchmakingService.Data
         public DbSet<MatchingAlgorithmMetric> MatchingAlgorithmMetrics { get; set; }
         public DbSet<DailyPick> DailyPicks { get; set; }
         public DbSet<CompatibilityQuestion> CompatibilityQuestions { get; set; }
-        public DbSet<CompatibilityAnswer> CompatibilityAnswers { get; set; }
+        public DbSet<UserQuestionAnswer> UserQuestionAnswers { get; set; }
+        public DbSet<CompatibilityScore> CompatibilityScores { get; set; }
         public DbSet<MatchInsight> MatchInsights { get; set; }
+        public DbSet<PsychometricProfile> PsychometricProfiles { get; set; }
+        public DbSet<RadarProfile> RadarProfiles { get; set; }
+        public DbSet<PostDateFeedback> PostDateFeedbacks { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -87,6 +91,35 @@ namespace MatchmakingService.Data
                 .Property(up => up.LookingFor)
                 .HasMaxLength(50);
 
+            // T530 (spec 005): Keycloak ID link for compatibility scoring
+            modelBuilder.Entity<UserProfile>()
+                .Property(up => up.KeycloakId)
+                .HasMaxLength(50);
+
+            modelBuilder.Entity<UserProfile>()
+                .HasIndex(up => up.KeycloakId)
+                .HasDatabaseName("IX_UserProfile_KeycloakId");
+
+            // T533 (spec 005): MatchInsight indexes — unique per (match, viewer)
+            modelBuilder.Entity<MatchInsight>()
+                .HasIndex(mi => new { mi.MatchId, mi.ForKeycloakId })
+                .IsUnique()
+                .HasDatabaseName("IX_MatchInsight_MatchUser");
+
+            modelBuilder.Entity<MatchInsight>()
+                .HasIndex(mi => mi.ForKeycloakId)
+                .HasDatabaseName("IX_MatchInsight_ForKeycloakId");
+
+            // T540: PsychometricProfile — unique per user
+            modelBuilder.Entity<PsychometricProfile>()
+                .HasIndex(pp => pp.UserId)
+                .IsUnique()
+                .HasDatabaseName("IX_PsychometricProfile_UserId");
+
+            modelBuilder.Entity<PsychometricProfile>()
+                .HasIndex(pp => pp.KeycloakId)
+                .HasDatabaseName("IX_PsychometricProfile_KeycloakId");
+
             modelBuilder.Entity<UserProfile>()
                 .Property(up => up.DesirabilityScore)
                 .HasDefaultValue(50.0);
@@ -147,25 +180,59 @@ namespace MatchmakingService.Data
                 .HasIndex(mam => mam.CalculatedAt)
                 .HasDatabaseName("IX_MatchingAlgorithmMetric_CalculatedAt");
 
-            // ─── MatchInsight entity configuration ───
-            modelBuilder.Entity<MatchInsight>()
-                .HasOne(mi => mi.Match)
-                .WithMany()
-                .HasForeignKey(mi => mi.MatchId)
-                .OnDelete(DeleteBehavior.Cascade);
+            // ─── Compatibility Questions ───
+            modelBuilder.Entity<CompatibilityQuestion>(entity =>
+            {
+                entity.ToTable("compatibility_questions");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.TextEn).IsRequired().HasMaxLength(300);
+                entity.Property(e => e.TextSv).IsRequired().HasMaxLength(300);
+                entity.Property(e => e.Emoji).HasMaxLength(10);
+                entity.Property(e => e.OptionsJson).IsRequired();
+                entity.Property(e => e.Category).HasConversion<string>().HasMaxLength(20);
+                entity.Property(e => e.VoicePromptText).HasMaxLength(500);
+                entity.Property(e => e.VoicePromptTextSv).HasMaxLength(500);
+                entity.HasIndex(e => e.SortOrder).HasDatabaseName("IX_CompatQ_SortOrder");
+            });
 
-            modelBuilder.Entity<MatchInsight>()
-                .HasIndex(mi => mi.ForKeycloakId)
-                .HasDatabaseName("IX_MatchInsight_ForKeycloakId");
+            modelBuilder.Entity<UserQuestionAnswer>(entity =>
+            {
+                entity.ToTable("user_question_answers");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.KeycloakId).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.AnswerType).IsRequired().HasMaxLength(10).HasDefaultValue("tap");
+                entity.Property(e => e.VoiceTranscript).HasMaxLength(2000);
+                entity.Property(e => e.QualityBreakdown).HasMaxLength(500);
+                entity.HasIndex(e => new { e.KeycloakId, e.QuestionId })
+                    .IsUnique()
+                    .HasDatabaseName("IX_UserAnswer_User_Question");
+                entity.HasOne(e => e.Question)
+                    .WithMany(q => q.Answers)
+                    .HasForeignKey(e => e.QuestionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
 
-            modelBuilder.Entity<MatchInsight>()
-                .HasIndex(mi => new { mi.MatchId, mi.ForKeycloakId })
-                .IsUnique()
-                .HasDatabaseName("IX_MatchInsight_MatchId_ForKeycloakId");
+            // ─── CompatibilityScore (T521/T522) ───
+            modelBuilder.Entity<CompatibilityScore>(entity =>
+            {
+                entity.ToTable("compatibility_scores");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.KeycloakId1).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.KeycloakId2).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.TopReasonsJson).IsRequired();
+                entity.Property(e => e.FrictionPointsJson).IsRequired();
+                entity.HasIndex(e => new { e.KeycloakId1, e.KeycloakId2 })
+                    .IsUnique()
+                    .HasDatabaseName("IX_CompatScore_Pair");
+                entity.HasIndex(e => e.CalculatedAt).HasDatabaseName("IX_CompatScore_CalculatedAt");
+            });
 
-            modelBuilder.Entity<MatchInsight>()
-                .Property(mi => mi.CreatedAt)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+            modelBuilder.Entity<RadarProfile>(entity =>
+            {
+                entity.HasIndex(r => r.KeycloakId)
+                    .IsUnique()
+                    .HasDatabaseName("IX_RadarProfile_KeycloakId_Unique");
+            });
         }
     }
 }

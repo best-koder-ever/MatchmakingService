@@ -22,6 +22,172 @@ namespace MatchmakingService.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
+            modelBuilder.Entity("MatchmakingService.Models.CompatibilityQuestion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("Emoji")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("OptionsJson")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TextEn")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<string>("TextSv")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<bool>("VoiceEligible")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("VoicePromptText")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("VoicePromptTextSv")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<double>("Weight")
+                        .HasColumnType("double");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SortOrder")
+                        .HasDatabaseName("IX_CompatQ_SortOrder");
+
+                    b.ToTable("compatibility_questions", (string)null);
+                });
+
+            modelBuilder.Entity("MatchmakingService.Models.CompatibilityScore", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<double>("AttachmentScore")
+                        .HasColumnType("double");
+
+                    b.Property<DateTime>("CalculatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("FrictionPointsJson")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("KeycloakId1")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("KeycloakId2")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<double>("LifestyleScore")
+                        .HasColumnType("double");
+
+                    b.Property<double>("OverallScore")
+                        .HasColumnType("double");
+
+                    b.Property<double>("PersonalityScore")
+                        .HasColumnType("double");
+
+                    b.Property<int>("SharedAnswerCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TopReasonsJson")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<double>("ValuesScore")
+                        .HasColumnType("double");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CalculatedAt")
+                        .HasDatabaseName("IX_CompatScore_CalculatedAt");
+
+                    b.HasIndex("KeycloakId1", "KeycloakId2")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CompatScore_Pair");
+
+                    b.ToTable("compatibility_scores", (string)null);
+                });
+
+            modelBuilder.Entity("MatchmakingService.Models.DailyPick", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Acted")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<int>("CandidateUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("GeneratedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime(6)")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("int");
+
+                    b.Property<double>("Score")
+                        .HasColumnType("double");
+
+                    b.Property<bool>("Seen")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateUserId");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("IX_DailyPick_ExpiresAt");
+
+                    b.HasIndex("UserId", "ExpiresAt")
+                        .HasDatabaseName("IX_DailyPick_UserExpiry");
+
+                    b.ToTable("daily_picks", (string)null);
+                });
+
             modelBuilder.Entity("MatchmakingService.Models.Match", b =>
                 {
                     b.Property<int>("Id")
@@ -98,19 +264,30 @@ namespace MatchmakingService.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ConfidenceLevel")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("ConnectionHookJson")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("ConnectionSignalsJson")
+                        .HasColumnType("longtext");
+
                     b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("ForKeycloakId")
                         .IsRequired()
-                        .HasColumnType("varchar(255)");
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
 
                     b.Property<string>("FrictionJson")
+                        .IsRequired()
                         .HasColumnType("longtext");
 
                     b.Property<string>("GrowthJson")
+                        .IsRequired()
                         .HasColumnType("longtext");
 
                     b.Property<int>("MatchId")
@@ -120,6 +297,7 @@ namespace MatchmakingService.Migrations
                         .HasColumnType("double");
 
                     b.Property<string>("ReasonsJson")
+                        .IsRequired()
                         .HasColumnType("longtext");
 
                     b.HasKey("Id");
@@ -129,7 +307,7 @@ namespace MatchmakingService.Migrations
 
                     b.HasIndex("MatchId", "ForKeycloakId")
                         .IsUnique()
-                        .HasDatabaseName("IX_MatchInsight_MatchId_ForKeycloakId");
+                        .HasDatabaseName("IX_MatchInsight_MatchUser");
 
                     b.ToTable("MatchInsights");
                 });
@@ -315,6 +493,146 @@ namespace MatchmakingService.Migrations
                     b.ToTable("Messages");
                 });
 
+            modelBuilder.Entity("MatchmakingService.Models.PostDateFeedback", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ChemistryRating")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ConversationRating")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("FreeformReflection")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("KeycloakId")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("MatchId")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("OverallRating")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("WouldMeetAgain")
+                        .HasColumnType("tinyint(1)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PostDateFeedbacks");
+                });
+
+            modelBuilder.Entity("MatchmakingService.Models.PsychometricProfile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("ComputedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<double>("Curiosity")
+                        .HasColumnType("double");
+
+                    b.Property<string>("KeycloakId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<double>("PlanningRhythm")
+                        .HasColumnType("double");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<double>("SocialEnergy")
+                        .HasColumnType("double");
+
+                    b.Property<double>("Steadiness")
+                        .HasColumnType("double");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<double>("Warmth")
+                        .HasColumnType("double");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("KeycloakId")
+                        .HasDatabaseName("IX_PsychometricProfile_KeycloakId");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PsychometricProfile_UserId");
+
+                    b.ToTable("PsychometricProfiles");
+                });
+
+            modelBuilder.Entity("MatchmakingService.Models.RadarProfile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<double>("Confidence")
+                        .HasColumnType("double");
+
+                    b.Property<double>("ConflictStyle")
+                        .HasColumnType("double");
+
+                    b.Property<double>("EmotionalStability")
+                        .HasColumnType("double");
+
+                    b.Property<double>("IntimacyComfort")
+                        .HasColumnType("double");
+
+                    b.Property<string>("KeycloakId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<double>("LifeStructure")
+                        .HasColumnType("double");
+
+                    b.Property<double>("Openness")
+                        .HasColumnType("double");
+
+                    b.Property<double>("SocialEnergy")
+                        .HasColumnType("double");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<double>("Warmth")
+                        .HasColumnType("double");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("KeycloakId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_RadarProfile_KeycloakId_Unique");
+
+                    b.ToTable("RadarProfiles");
+                });
+
             modelBuilder.Entity("MatchmakingService.Models.UserInteraction", b =>
                 {
                     b.Property<int>("Id")
@@ -392,6 +710,10 @@ namespace MatchmakingService.Migrations
                         .IsRequired()
                         .HasColumnType("longtext");
 
+                    b.Property<string>("FlavorId")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
                     b.Property<string>("Gender")
                         .IsRequired()
                         .HasColumnType("varchar(255)");
@@ -412,8 +734,15 @@ namespace MatchmakingService.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<bool>("IsBot")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<bool>("IsVerified")
                         .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("KeycloakId")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
 
                     b.Property<DateTime>("LastActiveAt")
                         .ValueGeneratedOnAdd()
@@ -483,6 +812,9 @@ namespace MatchmakingService.Migrations
                     b.HasIndex("Gender")
                         .HasDatabaseName("IX_UserProfile_Gender");
 
+                    b.HasIndex("KeycloakId")
+                        .HasDatabaseName("IX_UserProfile_KeycloakId");
+
                     b.HasIndex("UserId")
                         .IsUnique()
                         .HasDatabaseName("IX_UserProfile_UserId");
@@ -502,15 +834,106 @@ namespace MatchmakingService.Migrations
                     b.ToTable("UserProfiles");
                 });
 
-            modelBuilder.Entity("MatchmakingService.Models.MatchInsight", b =>
+            modelBuilder.Entity("MatchmakingService.Models.UserQuestionAnswer", b =>
                 {
-                    b.HasOne("MatchmakingService.Models.Match", "Match")
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AnswerType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)")
+                        .HasDefaultValue("tap");
+
+                    b.Property<DateTime>("AnsweredAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int?>("DepthScore")
+                        .HasColumnType("int");
+
+                    b.Property<string>("KeycloakId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("QualityBreakdown")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<int>("QuestionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Value")
+                        .HasColumnType("int");
+
+                    b.Property<double?>("VoiceDurationSeconds")
+                        .HasColumnType("double");
+
+                    b.Property<string>("VoiceTranscript")
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionId");
+
+                    b.HasIndex("KeycloakId", "QuestionId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_UserAnswer_User_Question");
+
+                    b.ToTable("user_question_answers", (string)null);
+                });
+
+            modelBuilder.Entity("MatchmakingService.Models.DailyPick", b =>
+                {
+                    b.HasOne("MatchmakingService.Models.UserProfile", "Candidate")
                         .WithMany()
-                        .HasForeignKey("MatchId")
+                        .HasForeignKey("CandidateUserId")
+                        .HasPrincipalKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Match");
+                    b.HasOne("MatchmakingService.Models.UserProfile", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .HasPrincipalKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Candidate");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("MatchmakingService.Models.PsychometricProfile", b =>
+                {
+                    b.HasOne("MatchmakingService.Models.UserProfile", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("MatchmakingService.Models.UserQuestionAnswer", b =>
+                {
+                    b.HasOne("MatchmakingService.Models.CompatibilityQuestion", "Question")
+                        .WithMany("Answers")
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Question");
+                });
+
+            modelBuilder.Entity("MatchmakingService.Models.CompatibilityQuestion", b =>
+                {
+                    b.Navigation("Answers");
                 });
 #pragma warning restore 612, 618
         }
