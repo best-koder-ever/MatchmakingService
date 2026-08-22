@@ -7,58 +7,26 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace MatchmakingService.Migrations
 {
     /// <inheritdoc />
+    /// <remarks>
+    /// NEUTRALIZED 2026-08-20: this migration is a backdated duplicate. The MatchInsights
+    /// table is already created by 20260511185257_AddMatchInsights (which is applied).
+    /// Because this migration's timestamp (2026-05-05) is older than the applied
+    /// 2026-05-11 migration, EF tried to run it on startup and crashed with
+    /// "Table 'MatchInsights' already exists". It is recorded as applied in
+    /// __EFMigrationsHistory but performs no work.
+    /// </remarks>
     public partial class AddMatchInsight : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.CreateTable(
-                name: "MatchInsights",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    MatchId = table.Column<int>(type: "int", nullable: false),
-                    ForKeycloakId = table.Column<string>(type: "varchar(255)", nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    ReasonsJson = table.Column<string>(type: "longtext", nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    FrictionJson = table.Column<string>(type: "longtext", nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    GrowthJson = table.Column<string>(type: "longtext", nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    OverallScore = table.Column<double>(type: "double", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP(6)")
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_MatchInsights", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_MatchInsights_Matches_MatchId",
-                        column: x => x.MatchId,
-                        principalTable: "Matches",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_MatchInsight_ForKeycloakId",
-                table: "MatchInsights",
-                column: "ForKeycloakId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_MatchInsight_MatchId_ForKeycloakId",
-                table: "MatchInsights",
-                columns: new[] { "MatchId", "ForKeycloakId" },
-                unique: true);
+            // Intentionally a no-op — see class remarks.
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "MatchInsights");
+            // Intentionally a no-op — see class remarks.
         }
     }
 }

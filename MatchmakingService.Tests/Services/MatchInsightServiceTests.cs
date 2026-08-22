@@ -98,8 +98,11 @@ public class MatchInsightServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GenerateForMatch_CalledTwice_IsIdempotent()
+    public async Task GenerateForMatch_CalledTwice_RegeneratesRowsInPlace()
     {
+        // MatchInsightService deliberately regenerates existing rows (used by the
+        // regenerate-insight endpoint), so a second call updates the same rows rather
+        // than creating duplicates or being a no-op.
         await SeedPair();
         _scorer.Setup(s => s.ScoreAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                .ReturnsAsync(CompatibilityResult.Neutral());
@@ -108,8 +111,8 @@ public class MatchInsightServiceTests : IDisposable
         await _service.GenerateForMatchAsync(matchId: 9, user1Id: 1, user2Id: 2, fallbackScore: 99.0);
 
         var insights = await _context.MatchInsights.Where(mi => mi.MatchId == 9).ToListAsync();
-        Assert.Equal(2, insights.Count); // Still just one per user
-        Assert.All(insights, mi => Assert.Equal(50.0, mi.OverallScore)); // First write wins
+        Assert.Equal(2, insights.Count); // One row per user — no duplicates on regeneration
+        Assert.All(insights, mi => Assert.Equal(99.0, mi.OverallScore)); // Regenerate updates in place
     }
 
     [Fact]

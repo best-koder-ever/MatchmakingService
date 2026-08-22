@@ -79,4 +79,35 @@ public class AdminControllerTests : IDisposable
             Assert.IsType<OkObjectResult>(result);
         }
     }
+
+    [Fact]
+    public async Task ResetBotMatchData_DeletesOnlyBotInteractionsInDev()
+    {
+        _context.UserProfiles.AddRange(
+            new UserProfile { UserId = 1, IsBot = true, Gender = "female", Age = 30, City = "Stockholm" },
+            new UserProfile { UserId = 2, IsBot = true, Gender = "male", Age = 31, City = "Göteborg" },
+            new UserProfile { UserId = 9, IsBot = false, Gender = "male", Age = 29, City = "Malmö" });
+        _context.Matches.AddRange(
+            new ModelMatch { User1Id = 1, User2Id = 9, IsActive = true, CreatedAt = DateTime.UtcNow },
+            new ModelMatch { User1Id = 7, User2Id = 8, IsActive = true, CreatedAt = DateTime.UtcNow });
+        _context.MatchScores.AddRange(
+            new MatchScore { UserId = 1, TargetUserId = 9, OverallScore = 60.0, CalculatedAt = DateTime.UtcNow },
+            new MatchScore { UserId = 7, TargetUserId = 8, OverallScore = 80.0, CalculatedAt = DateTime.UtcNow });
+        await _context.SaveChangesAsync();
+
+        var result = await BuildController("Development").ResetBotMatchData();
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Single(await _context.Matches.ToListAsync());          // real match preserved
+        Assert.Single(await _context.MatchScores.ToListAsync());      // real score preserved
+        Assert.Equal(3, await _context.UserProfiles.CountAsync());     // bot profiles preserved
+    }
+
+    [Fact]
+    public async Task ResetBotMatchData_RejectsInProduction()
+    {
+        var result = await BuildController("Production").ResetBotMatchData();
+        var status = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, status.StatusCode);
+    }
 }
