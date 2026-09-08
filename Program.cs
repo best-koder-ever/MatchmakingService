@@ -143,6 +143,11 @@ builder.Services.AddHttpClient<VideoServiceClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://localhost:8080");
     client.Timeout = TimeSpan.FromSeconds(3);
 });
+builder.Services.AddHttpClient<VoicePromptServiceClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Gateway:BaseUrl"] ?? "http://localhost:8080");
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
 
 // Register scoring configuration with hot-reload support
 builder.Services.Configure<MatchmakingService.Models.ScoringConfiguration>(
@@ -177,6 +182,7 @@ builder.Services.AddScoped<InternalApiKeyAuthFilter>();
 builder.Services.AddTransient<InternalApiKeyAuthHandler>();
 // T168/T169: Candidate filter pipeline
 builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.SelfExclusionFilter>();
+builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.ExcludeFakeFilter>();       // Order 4 — never show internal/test profiles
 builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.ExcludeBotFilter>();       // Order 5
 builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.ActiveUserFilter>();
 builder.Services.AddScoped<ICandidateFilter, MatchmakingService.Filters.GenderFilter>();

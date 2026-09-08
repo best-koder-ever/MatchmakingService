@@ -18,6 +18,7 @@ namespace MatchmakingService.Controllers
         private readonly ILogger<ProfilesController> _logger;
         private readonly MatchmakingDbContext _db;
         private readonly VideoServiceClient? _videoService;
+        private readonly VoicePromptServiceClient? _voicePromptService;
 
     public ProfilesController(
         StrategyResolver strategyResolver,
@@ -25,7 +26,8 @@ namespace MatchmakingService.Controllers
         IConfiguration configuration,
         ILogger<ProfilesController> logger,
         MatchmakingDbContext db,
-        VideoServiceClient? videoService = null)
+        VideoServiceClient? videoService = null,
+        VoicePromptServiceClient? voicePromptService = null)
     {
         _strategyResolver = strategyResolver;
         _httpClientFactory = httpClientFactory;
@@ -33,6 +35,7 @@ namespace MatchmakingService.Controllers
         _logger = logger;
         _db = db;
         _videoService = videoService;
+        _voicePromptService = voicePromptService;
     }
 
     /// <summary>
@@ -98,7 +101,23 @@ namespace MatchmakingService.Controllers
                     videoUrls = await _videoService.GetProfileVideoUrlsAsync(keycloakIds, authHeader);
                 }
 
-                var response = result.Candidates.Select(c => MapToFlutterShape(c, enrichment, videoUrls)).ToList();
+                // Fetch voice prompt audio URLs from photo-service (gateway routes
+                // /api/voice-prompts/** → photoCluster). Keyed by int profile id.
+                var candidateProfileIds = result.Candidates
+                    .Select(c => c.Profile.UserId)
+                    .Distinct()
+                    .ToList();
+                var voicePromptUrls = new Dictionary<int, string?>();
+                if (candidateProfileIds.Count > 0 && _voicePromptService != null)
+                {
+                    var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+                    voicePromptUrls = await _voicePromptService
+                        .GetVoicePromptUrlsAsync(candidateProfileIds, authHeader);
+                }
+
+                var response = result.Candidates
+                    .Select(c => MapToFlutterShape(c, enrichment, videoUrls, voicePromptUrls))
+                    .ToList();
 
                 _logger.LogInformation(
                     "Returning {Count} candidates for user {UserId} via {Strategy} in {Ms}ms",
@@ -168,7 +187,11 @@ namespace MatchmakingService.Controllers
         /// Flutter MatchCandidate.fromJson reads: userId, displayName, age, bio,
         /// city, photoUrl, photoUrls, compatibility/compatibilityScore, interests, etc.
         /// </summary>
-        private static object MapToFlutterShape(ScoredCandidate scored, Dictionary<int, JsonElement> enrichment, Dictionary<string, string?> videoUrls)
+        private static object MapToFlutterShape(
+            ScoredCandidate scored,
+            Dictionary<int, JsonElement> enrichment,
+            Dictionary<string, string?> videoUrls,
+            Dictionary<int, string?> voicePromptUrls)
         {
             var p = scored.Profile;
             enrichment.TryGetValue(p.UserId, out var userProfile);
@@ -177,6 +200,11 @@ namespace MatchmakingService.Controllers
             string? profileVideoUrl = null;
             if (p.KeycloakId != null && videoUrls.TryGetValue(p.KeycloakId, out var vu))
                 profileVideoUrl = vu;
+
+            // Resolve voice prompt URL: look up profileId → audio URL from photo-service
+            string? voicePromptUrl = null;
+            if (voicePromptUrls.TryGetValue(p.UserId, out var vpu) && !string.IsNullOrEmpty(vpu))
+                voicePromptUrl = vpu;
 
             return new
             {
@@ -200,7 +228,7 @@ namespace MatchmakingService.Controllers
                 photoUrls = GetStringArrayProp(userProfile, "photoUrls"),
                 profileVideoUrl = profileVideoUrl,
                 prompts = Array.Empty<object>(),
-                voicePromptUrl = (string?)null,
+                voicePromptUrl = voicePromptUrl,
                 occupation = GetStringProp(userProfile, "occupation"),
                 education = GetStringProp(userProfile, "education"),
                 height = GetIntProp(userProfile, "height"),
