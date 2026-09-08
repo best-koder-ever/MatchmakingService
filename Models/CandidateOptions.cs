@@ -43,6 +43,15 @@ namespace MatchmakingService.Models
         public bool OnlyShowVerifiedDefault { get; set; } = false;
 
         /// <summary>
+        /// Bot-account profile ids that discovery should treat as *real users*
+        /// (e.g. a demo/dev sign-in account such as the demo-user). Such a profile
+        /// is allowed to see bot candidates so the app feels alive during a demo.
+        /// This list is only consulted when the requesting profile is flagged as a
+        /// bot, so it has no effect on real users. Leave empty in production.
+        /// </summary>
+        public int[] DemoProfileIdsAllowedToSeeBots { get; set; } = Array.Empty<int>();
+
+        /// <summary>
         /// If pre-computed strategy fails, fall back to Live scoring.
         /// Disabling this means errors return empty results instead of degraded-but-slow results.
         /// </summary>
